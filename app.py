@@ -558,22 +558,198 @@ if page == "Dashboard":
         st.plotly_chart(fig, use_container_width=True)
 
         # ===== Novo layout de Insights =====
-        # CSS básico para badges e cards
+        # CSS moderno para badges e cards
         st.markdown(
             """
             <style>
-            .badge { display:inline-block; padding:2px 8px; border-radius:12px; font-size:12px; color:#fff; margin-left:6px; }
-            .badge-green{ background:#16a34a; }
-            .badge-orange{ background:#f59e0b; }
-            .badge-red{ background:#dc2626; }
-            .card { border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; background:#ffffff; margin-bottom:10px; }
-            .item-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
-            .item-name{ font-size:0.92rem; }
-            .item-mean{ font-weight:600; }
-            .small { font-size:0.86rem; color:#6b7280; }
-            .dot { display:inline-block; width:10px; height:10px; border-radius:50%; margin-left:6px; vertical-align:baseline; }
-            .sugg { color:#374151; font-size:0.85rem; margin-top:4px; }
-            .sugg i { color:#6b7280; }
+            /* Variáveis CSS para tema moderno */
+            :root {
+                --primary-blue: #2563eb;
+                --primary-blue-light: #3b82f6;
+                --success-green: #10b981;
+                --warning-orange: #f59e0b;
+                --danger-red: #ef4444;
+                --neutral-50: #f8fafc;
+                --neutral-100: #f1f5f9;
+                --neutral-200: #e2e8f0;
+                --neutral-300: #cbd5e1;
+                --neutral-400: #94a3b8;
+                --neutral-500: #64748b;
+                --neutral-600: #475569;
+                --neutral-700: #334155;
+                --neutral-800: #1e293b;
+                --neutral-900: #0f172a;
+                --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+                --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+                --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+                --border-radius: 12px;
+                --border-radius-sm: 8px;
+            }
+            
+            .badge { 
+                display: inline-block; 
+                padding: 4px 12px; 
+                border-radius: 20px; 
+                font-size: 12px; 
+                font-weight: 600;
+                color: #ffffff; 
+                margin-left: 8px;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                box-shadow: var(--shadow-sm);
+            }
+            .badge-green { 
+                background: linear-gradient(135deg, var(--success-green), #059669);
+                border: 1px solid rgba(16, 185, 129, 0.2);
+            }
+            .badge-orange { 
+                background: linear-gradient(135deg, var(--warning-orange), #d97706);
+                border: 1px solid rgba(245, 158, 11, 0.2);
+            }
+            .badge-red { 
+                background: linear-gradient(135deg, var(--danger-red), #dc2626);
+                border: 1px solid rgba(239, 68, 68, 0.2);
+            }
+            
+            .card { 
+                border: 1px solid var(--neutral-200); 
+                border-radius: var(--border-radius); 
+                padding: 20px 24px; 
+                background: linear-gradient(135deg, #ffffff, var(--neutral-50));
+                margin-bottom: 16px;
+                box-shadow: var(--shadow-md);
+                transition: all 0.3s ease;
+                position: relative;
+                overflow: hidden;
+            }
+            .card:hover {
+                transform: translateY(-2px);
+                box-shadow: var(--shadow-lg);
+                border-color: var(--primary-blue-light);
+            }
+            .card::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 3px;
+                background: linear-gradient(90deg, var(--primary-blue), var(--primary-blue-light));
+                border-radius: var(--border-radius) var(--border-radius) 0 0;
+            }
+            
+            .item-row { 
+                display: flex; 
+                align-items: center; 
+                justify-content: space-between; 
+                gap: 12px;
+                margin-bottom: 8px;
+            }
+            .item-name { 
+                font-size: 0.95rem; 
+                font-weight: 500;
+                color: var(--neutral-700);
+                line-height: 1.4;
+            }
+            .item-mean { 
+                font-weight: 700; 
+                font-size: 1.1rem;
+                color: var(--neutral-800);
+                background: var(--neutral-100);
+                padding: 4px 8px;
+                border-radius: var(--border-radius-sm);
+                min-width: 50px;
+                text-align: center;
+            }
+            .small { 
+                font-size: 0.875rem; 
+                color: var(--neutral-500);
+                font-weight: 500;
+                margin-bottom: 12px;
+            }
+            
+            .dot { 
+                display: inline-block; 
+                width: 12px; 
+                height: 12px; 
+                border-radius: 50%; 
+                margin-left: 8px; 
+                vertical-align: middle;
+                box-shadow: var(--shadow-sm);
+                border: 2px solid #ffffff;
+            }
+            
+            .progress-bar {
+                height: 8px;
+                background: var(--neutral-200);
+                border-radius: 4px;
+                overflow: hidden;
+                margin: 8px 0;
+                box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
+            }
+            .progress-fill {
+                height: 100%;
+                border-radius: 4px;
+                transition: width 0.3s ease;
+                background: linear-gradient(90deg, var(--primary-blue), var(--primary-blue-light));
+            }
+            .progress-fill.green {
+                background: linear-gradient(90deg, var(--success-green), #059669);
+            }
+            .progress-fill.orange {
+                background: linear-gradient(90deg, var(--warning-orange), #d97706);
+            }
+            .progress-fill.red {
+                background: linear-gradient(90deg, var(--danger-red), #dc2626);
+            }
+            
+            .sugg { 
+                color: var(--neutral-600); 
+                font-size: 0.875rem; 
+                margin-top: 8px;
+                line-height: 1.5;
+                background: var(--neutral-50);
+                padding: 8px 12px;
+                border-radius: var(--border-radius-sm);
+                border-left: 3px solid var(--primary-blue-light);
+            }
+            .sugg i { 
+                color: var(--warning-orange);
+                margin-right: 6px;
+            }
+            
+            /* Status indicators */
+            .status-excellent { color: var(--success-green); }
+            .status-good { color: var(--warning-orange); }
+            .status-poor { color: var(--danger-red); }
+            
+            /* Alert styling */
+            .alert-warning {
+                background: linear-gradient(135deg, #fef3c7, #fde68a);
+                border: 1px solid #f59e0b;
+                border-radius: var(--border-radius);
+                padding: 16px 20px;
+                margin: 16px 0;
+                color: var(--neutral-800);
+                font-weight: 500;
+            }
+            
+            /* Tab styling */
+            .stTabs [data-baseweb="tab-list"] {
+                gap: 8px;
+            }
+            .stTabs [data-baseweb="tab"] {
+                background: var(--neutral-100);
+                border-radius: var(--border-radius-sm);
+                padding: 8px 16px;
+                font-weight: 500;
+                transition: all 0.3s ease;
+            }
+            .stTabs [aria-selected="true"] {
+                background: var(--primary-blue);
+                color: white;
+                box-shadow: var(--shadow-sm);
+            }
             </style>
             """,
             unsafe_allow_html=True,
@@ -590,9 +766,14 @@ if page == "Dashboard":
             worst_item, worst_dim, worst_mean = min(all_items_stats, key=lambda x: x[2])
             gap = float(goal) - float(worst_mean)
             gap_txt = f"(gap {gap:.2f})" if gap > 0 else ""
-            st.warning(
-                f"Atenção: {len(pri)+len(aco)} itens abaixo da meta — {len(pri)} prioritários. "
-                f"Pior desempenho: [{worst_dim}] {worst_item} com média {worst_mean:.2f} {gap_txt}."
+            st.markdown(
+                f"""
+                <div class="alert-warning">
+                    <strong>⚠️ Atenção:</strong> {len(pri)+len(aco)} itens abaixo da meta — {len(pri)} prioritários. 
+                    <br><strong>Pior desempenho:</strong> [{worst_dim}] {worst_item} com média {worst_mean:.2f} {gap_txt}.
+                </div>
+                """,
+                unsafe_allow_html=True
             )
         
         st.subheader("Insights Automáticos")
@@ -611,12 +792,13 @@ if page == "Dashboard":
                     except Exception:
                         dim_goal = float(goal)
                     # farol
-                    color = "#16a34a" if (dim_mean is not None and dim_mean >= dim_goal) else ("#f59e0b" if (dim_mean is not None and dim_goal - dim_mean <= 0.5) else "#dc2626")
+                    color = "#10b981" if (dim_mean is not None and dim_mean >= dim_goal) else ("#f59e0b" if (dim_mean is not None and dim_goal - dim_mean <= 0.5) else "#ef4444")
+                    status_class = "status-excellent" if (dim_mean is not None and dim_mean >= dim_goal) else ("status-good" if (dim_mean is not None and dim_goal - dim_mean <= 0.5) else "status-poor")
                     st.markdown(
                         f"<div class='card'>"
                         f"<div class='item-row'><strong>{dim_name}</strong>"
                         f"<span class='dot' style='background:{color}'></span></div>"
-                        f"<div class='small'>Média {(dim_mean if dim_mean is not None else 0):.2f} / Meta {dim_goal:.1f}</div>",
+                        f"<div class='small'>Média <span class='{status_class}'>{(dim_mean if dim_mean is not None else 0):.2f}</span> / Meta {dim_goal:.1f}</div>",
                         unsafe_allow_html=True,
                     )
                     # 2 itens com menor média da dimensão
@@ -629,8 +811,15 @@ if page == "Dashboard":
                             pct = max(0.0, min(1.0, float(mean) / 5.0))
                         except Exception:
                             pct = 0.0
-                        color = "#16a34a" if (mean is not None and mean >= dim_goal) else ("#f59e0b" if (mean is not None and dim_goal - mean <= 0.5) else "#dc2626")
-                        bar_html = f"<div style='height:6px;background:#e5e7eb;border-radius:6px;overflow:hidden;'><div style='width:{int(pct*100)}%;height:100%;background:{color};'></div></div>"
+                        
+                        # Determinar classe da barra de progresso
+                        progress_class = "green" if (mean is not None and mean >= dim_goal) else ("orange" if (mean is not None and dim_goal - mean <= 0.5) else "red")
+                        
+                        bar_html = f"""
+                        <div class='progress-bar'>
+                            <div class='progress-fill {progress_class}' style='width:{int(pct*100)}%;'></div>
+                        </div>
+                        """
                         st.markdown(
                             f"<div class='item-row'><span class='item-name'>{it}</span><span class='item-mean'>{(mean if mean is not None else 0):.2f}</span></div>"
                             + bar_html,
