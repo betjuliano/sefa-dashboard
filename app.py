@@ -9,6 +9,19 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+import seaborn as sns
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.decomposition import PCA
+from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
+from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import r2_score, mean_squared_error
+import statsmodels.api as sm
+from scipy import stats
+from scipy.stats import chi2_contingency, pearsonr, spearmanr
 
 from dotenv import load_dotenv
 
@@ -175,6 +188,153 @@ def compute_metrics(df: pd.DataFrame, goal: float):
         results["insights"][k] = sorted(results["insights"][k], key=lambda x: x[2])
 
     return results
+
+# -----------------------------
+# Statistical Analysis Functions
+# -----------------------------
+
+def prepare_data_for_analysis(df: pd.DataFrame):
+    """Prepare data for statistical analysis"""
+    df_analysis = df.copy()
+    
+    # Convert Likert scales to numeric
+    for dim_name, items in DIMENSIONS.items():
+        for item in items:
+            if item in df_analysis.columns:
+                df_analysis[item] = normalize_likert(df_analysis[item])
+    
+    # Convert satisfaction to numeric
+    if SAT_FIELD in df_analysis.columns:
+        df_analysis[SAT_FIELD] = normalize_satisfaction(df_analysis[SAT_FIELD])
+    
+    # Create dimension scores (mean of items in each dimension)
+    for dim_name, items in DIMENSIONS.items():
+        available_items = [item for item in items if item in df_analysis.columns]
+        if available_items:
+            df_analysis[f'{dim_name}_score'] = df_analysis[available_items].mean(axis=1)
+    
+    # Encode categorical variables
+    le_sexo = LabelEncoder()
+    le_escolaridade = LabelEncoder()
+    le_servidor = LabelEncoder()
+    
+    if PROFILE_FIELDS["Sexo"] in df_analysis.columns:
+        df_analysis['sexo_encoded'] = le_sexo.fit_transform(df_analysis[PROFILE_FIELDS["Sexo"]].fillna('Não informado'))
+    
+    if PROFILE_FIELDS["Escolaridade"] in df_analysis.columns:
+        df_analysis['escolaridade_encoded'] = le_escolaridade.fit_transform(df_analysis[PROFILE_FIELDS["Escolaridade"]].fillna('Não informado'))
+    
+    if PROFILE_FIELDS["Servidor Público"] in df_analysis.columns:
+        df_analysis['servidor_encoded'] = le_servidor.fit_transform(df_analysis[PROFILE_FIELDS["Servidor Público"]].fillna('Não informado'))
+    
+    return df_analysis
+
+def regression_analysis(df: pd.DataFrame, target_dimension: str):
+    """Perform regression analysis for a dimension"""
+    df_clean = df.dropna(subset=[f'{target_dimension}_score'])
+    
+    # Prepare features
+    features = []
+    feature_names = []
+    
+    if 'idade_encoded' in df_clean.columns:
+        features.append(df_clean[PROFILE_FIELDS["Idade"]].fillna(df_clean[PROFILE_FIELDS["Idade"]].median()))
+        feature_names.append('Idade')
+    
+    if 'sexo_encoded' in df_clean.columns:
+        features.append(df_clean['sexo_encoded'])
+        feature_names.append('Sexo')
+    
+    if 'escolaridade_encoded' in df_clean.columns:
+        features.append(df_clean['escolaridade_encoded'])
+        feature_names.append('Escolaridade')
+    
+    if 'servidor_encoded' in df_clean.columns:
+        features.append(df_clean['servidor_encoded'])
+        feature_names.append('Servidor Público')
+    
+    if SAT_FIELD in df_clean.columns:
+        features.append(df_clean[SAT_FIELD].fillna(df_clean[SAT_FIELD].median()))
+        feature_names.append('Satisfação Geral')
+    
+    if not features:
+        return None, None
+    
+    X = np.column_stack(features)
+    y = df_clean[f'{target_dimension}_score']
+    
+    # Remove rows with NaN
+    mask = ~(np.isnan(X).any(axis=1) | np.isnan(y))
+    X = X[mask]
+    y = y[mask]
+    
+    if len(X) < 10:  # Need minimum samples
+        return None, None
+    
+    # OLS Regression
+    X_with_const = sm.add_constant(X)
+    model = sm.OLS(y, X_with_const).fit()
+    
+    return model, feature_names
+
+def multivariate_analysis(df: pd.DataFrame):
+    """Perform multivariate analysis"""
+    # Prepare data
+    dimension_scores = []
+    dimension_names = []
+    
+    for dim_name in DIMENSIONS.keys():
+        if f'{dim_name}_score' in df.columns:
+            dimension_scores.append(df[f'{dim_name}_score'].fillna(df[f'{dim_name}_score'].median()))
+            dimension_names.append(dim_name)
+    
+    if len(dimension_scores) < 2:
+        return None
+    
+    X = np.column_stack(dimension_scores)
+    
+    # Remove rows with NaN
+    mask = ~np.isnan(X).any(axis=1)
+    X = X[mask]
+    
+    if len(X) < 10:
+        return None
+    
+    # Standardize data
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # PCA Analysis
+    pca = PCA()
+    pca_result = pca.fit_transform(X_scaled)
+    
+    # Determine optimal number of clusters
+    silhouette_scores = []
+    K_range = range(2, min(8, len(X)//10 + 1))
+    
+    for k in K_range:
+        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+        cluster_labels = kmeans.fit_predict(X_scaled)
+        silhouette_avg = silhouette_score(X_scaled, cluster_labels)
+        silhouette_scores.append(silhouette_avg)
+    
+    optimal_k = K_range[np.argmax(silhouette_scores)] if silhouette_scores else 2
+    
+    # Final clustering
+    kmeans_final = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+    cluster_labels = kmeans_final.fit_predict(X_scaled)
+    
+    return {
+        'pca': pca,
+        'pca_result': pca_result,
+        'scaler': scaler,
+        'kmeans': kmeans_final,
+        'cluster_labels': cluster_labels,
+        'dimension_names': dimension_names,
+        'optimal_k': optimal_k,
+        'silhouette_scores': silhouette_scores,
+        'X_scaled': X_scaled
+    }
 
 def filters_ui(df: pd.DataFrame):
     st.sidebar.markdown("### Filtros")
@@ -598,6 +758,360 @@ if page == "Dashboard":
                             st.write(f"- {it1} ↔ {it2} (ρ≈{rho:.2f}). Sequência sugerida: atuar em {it1} e, em seguida, reforçar {it2}. Déficit conjunto: {shortfall:.2f}.")
         # ===== Fim do novo layout =====
         # Bloco de frequências por item removido (poderá voltar futuramente, agora substituído pela Análise Detalhada).
+
+# -----------------------------
+# Page: Análise Detalhada
+# -----------------------------
+if page == "Análise Detalhada":
+    st.header("🔬 Análise Estatística Detalhada")
+    
+    if st.session_state.data is None:
+        st.info("Carregue dados na página **Upload de Arquivo** primeiro.")
+    else:
+        df = st.session_state.data.copy()
+        df_f = filters_ui(df)
+        
+        # Prepare data for analysis
+        df_analysis = prepare_data_for_analysis(df_f)
+        
+        st.info(f"📊 **Analisando:** {len(df_analysis)} respostas válidas")
+        
+        # Tabs for different analyses
+        tab1, tab2, tab3, tab4 = st.tabs([
+            "📈 Regressões por Dimensão", 
+            "🎯 Regressões vs Satisfação", 
+            "🔍 Análise Multivariada",
+            "📊 Correlações e Associações"
+        ])
+        
+        # Tab 1: Regressions by Dimension
+        with tab1:
+            st.subheader("Regressões das Dimensões vs Perfil Demográfico")
+            st.caption("Análise de como variáveis demográficas influenciam cada dimensão de qualidade")
+            
+            dimension_sel = st.selectbox(
+                "Selecione a dimensão para análise:",
+                options=list(DIMENSIONS.keys()),
+                key="regression_dimension"
+            )
+            
+            if st.button("🔍 Executar Regressão", key="run_regression"):
+                model, feature_names = regression_analysis(df_analysis, dimension_sel)
+                
+                if model is not None:
+                    st.success(f"✅ Regressão executada com sucesso para **{dimension_sel}**")
+                    
+                    # Display results
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("#### 📊 Resumo do Modelo")
+                        st.write(f"**R² Ajustado:** {model.rsquared_adj:.3f}")
+                        st.write(f"**F-statístico:** {model.fvalue:.2f}")
+                        st.write(f"**p-valor (F):** {model.f_pvalue:.4f}")
+                        st.write(f"**Observações:** {int(model.nobs)}")
+                        
+                        if model.f_pvalue < 0.05:
+                            st.success("✅ Modelo estatisticamente significativo (p < 0.05)")
+                        else:
+                            st.warning("⚠️ Modelo não estatisticamente significativo (p ≥ 0.05)")
+                    
+                    with col2:
+                        st.markdown("#### 📈 Coeficientes")
+                        coef_df = pd.DataFrame({
+                            'Variável': ['Intercepto'] + feature_names,
+                            'Coeficiente': model.params.values,
+                            'Erro Padrão': model.bse.values,
+                            't-valor': model.tvalues.values,
+                            'p-valor': model.pvalues.values
+                        })
+                        
+                        # Highlight significant coefficients
+                        def highlight_significant(row):
+                            if row['p-valor'] < 0.05:
+                                return ['background-color: #d4edda'] * len(row)
+                            return [''] * len(row)
+                        
+                        st.dataframe(
+                            coef_df.style.apply(highlight_significant, axis=1).format({
+                                'Coeficiente': '{:.3f}',
+                                'Erro Padrão': '{:.3f}',
+                                't-valor': '{:.3f}',
+                                'p-valor': '{:.4f}'
+                            }),
+                            use_container_width=True
+                        )
+                    
+                    # Interpretation
+                    st.markdown("#### 💡 Interpretação")
+                    significant_vars = coef_df[coef_df['p-valor'] < 0.05]
+                    
+                    if len(significant_vars) > 1:  # More than just intercept
+                        st.write("**Variáveis com influência significativa:**")
+                        for _, row in significant_vars.iterrows():
+                            if row['Variável'] != 'Intercepto':
+                                direction = "positiva" if row['Coeficiente'] > 0 else "negativa"
+                                st.write(f"- **{row['Variável']}**: Influência {direction} (β = {row['Coeficiente']:.3f})")
+                    else:
+                        st.info("Nenhuma variável demográfica apresenta influência significativa nesta dimensão.")
+                
+                else:
+                    st.error("❌ Não foi possível executar a regressão. Verifique se há dados suficientes.")
+        
+        # Tab 2: Satisfaction Regression
+        with tab2:
+            st.subheader("Regressões das Dimensões vs Satisfação Geral")
+            st.caption("Análise de como cada dimensão influencia a satisfação geral")
+            
+            if SAT_FIELD in df_analysis.columns:
+                if st.button("🎯 Executar Análise de Satisfação", key="run_satisfaction"):
+                    st.success("✅ Análise de satisfação executada")
+                    
+                    # Prepare data
+                    satisfaction_data = df_analysis[[SAT_FIELD] + [f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
+                    
+                    if len(satisfaction_data) > 10:
+                        # Multiple regression
+                        X = satisfaction_data[[f'{dim}_score' for dim in DIMENSIONS.keys()]]
+                        y = satisfaction_data[SAT_FIELD]
+                        
+                        X_with_const = sm.add_constant(X)
+                        model = sm.OLS(y, X_with_const).fit()
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.markdown("#### 📊 Modelo de Satisfação")
+                            st.write(f"**R² Ajustado:** {model.rsquared_adj:.3f}")
+                            st.write(f"**F-statístico:** {model.fvalue:.2f}")
+                            st.write(f"**p-valor (F):** {model.f_pvalue:.4f}")
+                            st.write(f"**Observações:** {int(model.nobs)}")
+                        
+                        with col2:
+                            st.markdown("#### 📈 Influência das Dimensões")
+                            coef_df = pd.DataFrame({
+                                'Dimensão': ['Intercepto'] + list(DIMENSIONS.keys()),
+                                'Coeficiente': model.params.values,
+                                'p-valor': model.pvalues.values
+                            })
+                            
+                            # Sort by coefficient (excluding intercept)
+                            coef_df_sorted = coef_df.iloc[1:].sort_values('Coeficiente', ascending=False)
+                            
+                            for _, row in coef_df_sorted.iterrows():
+                                significance = "✅" if row['p-valor'] < 0.05 else "❌"
+                                st.write(f"{significance} **{row['Dimensão']}**: β = {row['Coeficiente']:.3f}")
+                        
+                        # Visualization
+                        fig = px.bar(
+                            coef_df_sorted, 
+                            x='Coeficiente', 
+                            y='Dimensão',
+                            title="Influência das Dimensões na Satisfação Geral",
+                            color='p-valor',
+                            color_continuous_scale='RdYlGn_r'
+                        )
+                        fig.update_layout(height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Interpretation
+                        st.markdown("#### 💡 Interpretação")
+                        most_important = coef_df_sorted.iloc[0]
+                        least_important = coef_df_sorted.iloc[-1]
+                        
+                        st.write(f"**Dimensão mais importante:** {most_important['Dimensão']} (β = {most_important['Coeficiente']:.3f})")
+                        st.write(f"**Dimensão menos importante:** {least_important['Dimensão']} (β = {least_important['Coeficiente']:.3f})")
+                    
+                    else:
+                        st.error("❌ Dados insuficientes para análise de satisfação.")
+            else:
+                st.warning("⚠️ Campo de satisfação não encontrado nos dados.")
+        
+        # Tab 3: Multivariate Analysis
+        with tab3:
+            st.subheader("Análise Multivariada")
+            st.caption("Análise de Componentes Principais (PCA) e Clustering")
+            
+            if st.button("🔍 Executar Análise Multivariada", key="run_multivariate"):
+                multivariate_result = multivariate_analysis(df_analysis)
+                
+                if multivariate_result is not None:
+                    st.success("✅ Análise multivariada executada com sucesso")
+                    
+                    # PCA Results
+                    st.markdown("#### 📊 Análise de Componentes Principais (PCA)")
+                    
+                    pca = multivariate_result['pca']
+                    pca_result = multivariate_result['pca_result']
+                    dimension_names = multivariate_result['dimension_names']
+                    
+                    # Explained variance
+                    explained_var = pca.explained_variance_ratio_
+                    cumsum_var = np.cumsum(explained_var)
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.markdown("##### Variância Explicada")
+                        for i, (var, cumvar) in enumerate(zip(explained_var, cumsum_var)):
+                            st.write(f"**PC{i+1}**: {var:.1%} (Acumulada: {cumvar:.1%})")
+                    
+                    with col2:
+                        # PCA Scree Plot
+                        fig = go.Figure()
+                        fig.add_trace(go.Scatter(
+                            x=list(range(1, len(explained_var)+1)),
+                            y=explained_var,
+                            mode='lines+markers',
+                            name='Variância Explicada'
+                        ))
+                        fig.update_layout(
+                            title="Scree Plot - Variância Explicada por Componente",
+                            xaxis_title="Componente Principal",
+                            yaxis_title="Variância Explicada",
+                            height=300
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    # PCA Loadings
+                    st.markdown("##### Cargas dos Componentes Principais")
+                    loadings_df = pd.DataFrame(
+                        pca.components_.T,
+                        columns=[f'PC{i+1}' for i in range(len(dimension_names))],
+                        index=dimension_names
+                    )
+                    st.dataframe(loadings_df.style.format('{:.3f}'), use_container_width=True)
+                    
+                    # Clustering Results
+                    st.markdown("#### 🎯 Análise de Clustering")
+                    
+                    optimal_k = multivariate_result['optimal_k']
+                    cluster_labels = multivariate_result['cluster_labels']
+                    silhouette_scores = multivariate_result['silhouette_scores']
+                    
+                    st.write(f"**Número ótimo de clusters:** {optimal_k}")
+                    st.write(f"**Score de Silhouette:** {silhouette_scores[np.argmax(silhouette_scores)]:.3f}")
+                    
+                    # Cluster visualization (first 2 PCs)
+                    if len(pca_result) > 1:
+                        fig = px.scatter(
+                            x=pca_result[:, 0],
+                            y=pca_result[:, 1],
+                            color=cluster_labels,
+                            title="Clusters nos Primeiros 2 Componentes Principais",
+                            labels={'x': 'PC1', 'y': 'PC2'},
+                            color_discrete_sequence=px.colors.qualitative.Set1
+                        )
+                        fig.update_layout(height=400)
+                        st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Cluster characteristics
+                    st.markdown("##### Características dos Clusters")
+                    cluster_data = df_analysis.copy()
+                    cluster_data['Cluster'] = cluster_labels
+                    
+                    cluster_stats = cluster_data.groupby('Cluster')[dimension_names].mean()
+                    st.dataframe(cluster_stats.style.format('{:.2f}'), use_container_width=True)
+                    
+                    # Interpretation
+                    st.markdown("#### 💡 Interpretação")
+                    st.write("**Análise PCA:**")
+                    if explained_var[0] > 0.5:
+                        st.write(f"- O primeiro componente explica {explained_var[0]:.1%} da variância")
+                        st.write("- Há uma dimensão dominante na qualidade do sistema")
+                    else:
+                        st.write("- As dimensões são relativamente independentes")
+                    
+                    st.write("**Análise de Clustering:**")
+                    if optimal_k > 2:
+                        st.write(f"- Identificados {optimal_k} grupos distintos de usuários")
+                        st.write("- Sugere segmentação para estratégias diferenciadas")
+                    else:
+                        st.write("- Usuários formam grupos relativamente homogêneos")
+                
+                else:
+                    st.error("❌ Não foi possível executar análise multivariada. Verifique os dados.")
+        
+        # Tab 4: Correlations and Associations
+        with tab4:
+            st.subheader("Correlações e Associações")
+            st.caption("Análise de correlações entre variáveis e testes de associação")
+            
+            if st.button("📊 Executar Análise de Correlações", key="run_correlations"):
+                st.success("✅ Análise de correlações executada")
+                
+                # Prepare correlation data
+                corr_data = df_analysis[[f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
+                
+                if len(corr_data) > 10:
+                    # Correlation matrix
+                    correlation_matrix = corr_data.corr()
+                    
+                    # Heatmap
+                    fig = px.imshow(
+                        correlation_matrix,
+                        text_auto=True,
+                        aspect="auto",
+                        title="Matriz de Correlação entre Dimensões",
+                        color_continuous_scale='RdBu_r'
+                    )
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Detailed correlations
+                    st.markdown("#### 📈 Correlações Detalhadas")
+                    
+                    correlations = []
+                    for i, dim1 in enumerate(DIMENSIONS.keys()):
+                        for j, dim2 in enumerate(DIMENSIONS.keys()):
+                            if i < j:  # Avoid duplicates
+                                corr_val = correlation_matrix.loc[f'{dim1}_score', f'{dim2}_score']
+                                correlations.append({
+                                    'Dimensão 1': dim1,
+                                    'Dimensão 2': dim2,
+                                    'Correlação': corr_val,
+                                    'Intensidade': 'Forte' if abs(corr_val) > 0.7 else 'Moderada' if abs(corr_val) > 0.3 else 'Fraca'
+                                })
+                    
+                    corr_df = pd.DataFrame(correlations)
+                    corr_df = corr_df.sort_values('Correlação', key=abs, ascending=False)
+                    
+                    st.dataframe(corr_df.style.format({'Correlação': '{:.3f}'}), use_container_width=True)
+                    
+                    # Categorical associations
+                    st.markdown("#### 🔗 Associações com Variáveis Categóricas")
+                    
+                    # Sex vs Dimensions
+                    if PROFILE_FIELDS["Sexo"] in df_analysis.columns:
+                        st.markdown("##### Associação: Sexo vs Dimensões")
+                        
+                        sex_dim_data = df_analysis[[PROFILE_FIELDS["Sexo"]] + [f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
+                        
+                        if len(sex_dim_data) > 10:
+                            # ANOVA for each dimension
+                            for dim in DIMENSIONS.keys():
+                                groups = [group[f'{dim}_score'].dropna() for name, group in sex_dim_data.groupby(PROFILE_FIELDS["Sexo"])]
+                                if len(groups) > 1 and all(len(g) > 0 for g in groups):
+                                    f_stat, p_val = stats.f_oneway(*groups)
+                                    significance = "✅" if p_val < 0.05 else "❌"
+                                    st.write(f"{significance} **{dim}**: F = {f_stat:.3f}, p = {p_val:.4f}")
+                    
+                    # Servidor Público vs Dimensions
+                    if PROFILE_FIELDS["Servidor Público"] in df_analysis.columns:
+                        st.markdown("##### Associação: Servidor Público vs Dimensões")
+                        
+                        serv_dim_data = df_analysis[[PROFILE_FIELDS["Servidor Público"]] + [f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
+                        
+                        if len(serv_dim_data) > 10:
+                            for dim in DIMENSIONS.keys():
+                                groups = [group[f'{dim}_score'].dropna() for name, group in serv_dim_data.groupby(PROFILE_FIELDS["Servidor Público"])]
+                                if len(groups) > 1 and all(len(g) > 0 for g in groups):
+                                    f_stat, p_val = stats.f_oneway(*groups)
+                                    significance = "✅" if p_val < 0.05 else "❌"
+                                    st.write(f"{significance} **{dim}**: F = {f_stat:.3f}, p = {p_val:.4f}")
+                
+                else:
+                    st.error("❌ Dados insuficientes para análise de correlações.")
 
 # -----------------------------
 # Page: Perfil
