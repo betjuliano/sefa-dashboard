@@ -1,0 +1,12 @@
+{
+  "version": "1.0",
+  "storage_format": "local",
+  "backup_enabled": true,
+  "max_file_size_mb": 100,
+  "allowed_extensions": [
+    ".csv",
+    ".xlsx",
+    ".xls"
+  ],
+  "created_at": "2024-01-01T00:00:00Z"
+}

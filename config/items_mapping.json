@@ -1,0 +1,65 @@
+{
+  "dimensions": {
+    "Qualidade do Sistema": [
+      "O sistema funciona sem falhas.",
+      "Os recursos de acessibilidade do sistema são fáceis de encontrar.",
+      "O sistema é fácil de usar.",
+      "O sistema está disponível para uso em qualquer dia e hora.",
+      "O desempenho do sistema é satisfatório, independentemente da forma de acesso.",
+      "O sistema informa sobre as políticas de privacidade e segurança.",
+      "Acredito que meus dados estão seguros neste sistema.",
+      "É fácil localizar os serviços e as informações no sistema.",
+      "A navegação pelo sistema é intuitiva.",
+      "O sistema oferece instruções úteis de como utilizar os serviços."
+    ],
+    "Qualidade da Informação": [
+      "As informações são fáceis de entender.",
+      "As informações são precisas.",
+      "As informações auxiliam na solicitação dos serviços.",
+      "Todas as informações necessárias para a solicitação dos serviços são fornecidas.",
+      "O prazo de entrega dos serviços é informado.",
+      "As taxas cobradas pelos serviços são informadas.",
+      "As informações disponibilizadas estão atualizadas."
+    ],
+    "Qualidade da Operação": [
+      "Os serviços oferecem suporte técnico eficiente.",
+      "O atendimento resolve meus problemas.",
+      "Os serviços permitem a conclusão das tarefas no menor tempo possível.",
+      "Consigo obter o que preciso no menor tempo possível.",
+      "Os serviços atendem às minhas expectativas.",
+      "Quando preciso de ajuda, minhas dificuldades são resolvidas.",
+      "Meus dados são automaticamente identificados na solicitação dos serviços.",
+      "Os serviços oferecidos são confiáveis.",
+      "Os serviços permitem interações em tempo real (ex. chatbot, IA)."
+    ]
+  },
+  "likert_order": [
+    "Discordo totalmente",
+    "Discordo",
+    "Indiferente",
+    "Concordo",
+    "Concordo totalmente"
+  ],
+  "likert_map": {
+    "Discordo totalmente": 1,
+    "Discordo": 2,
+    "Indiferente": 3,
+    "Concordo": 4,
+    "Concordo totalmente": 5,
+    "Não sei": null
+  },
+  "satisfaction_field": "Qual o seu nível de satisfação com o Sistema?",
+  "satisfaction_map": {
+    "Muito insatisfeito": 1,
+    "Insatisfeito": 2,
+    "Indiferente": 3,
+    "Satisfeito": 4,
+    "Muito satisfeito": 5
+  },
+  "profile_fields": {
+    "Sexo": "Qual o seu sexo?",
+    "Idade": "Qual a sua idade?",
+    "Escolaridade": "Qual seu nível de escolaridade completo?",
+    "Servidor Público": "Você é funcionário público?"
+  }
+}
