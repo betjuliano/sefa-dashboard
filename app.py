@@ -286,14 +286,28 @@ page = st.sidebar.radio("Navegação", options=list(pages.keys()))
 # Load data (uploaded or sample)
 # -----------------------------
 if "data" not in st.session_state:
-    st.session_state.data = None
+    # Carregar dados padrão automaticamente
+    try:
+        default_df = read_csv(os.path.join("sample_data", "baseKelm.csv"))
+        st.session_state.data = default_df
+        st.session_state.data_source = "baseKelm.csv (padrão)"
+    except Exception as e:
+        st.session_state.data = None
+        st.session_state.data_source = None
 
 def read_csv(uploaded_file, delimiter=";", encoding="latin-1"):
     return pd.read_csv(uploaded_file, sep=delimiter, encoding=encoding)
 
 def data_source_ui():
     st.markdown("#### Fonte de Dados")
-    uploaded = st.file_uploader("Carregue um arquivo .csv", type=["csv"])
+    
+    # Mostrar fonte atual
+    if st.session_state.data is not None:
+        st.info(f"📊 **Dados atuais:** {st.session_state.data_source}")
+        st.caption(f"Linhas: {len(st.session_state.data)}, Colunas: {len(st.session_state.data.columns)}")
+    
+    st.markdown("#### Upload de Novo Arquivo")
+    uploaded = st.file_uploader("Carregue um arquivo .csv para substituir os dados atuais", type=["csv"])
     col_delim, col_enc = st.columns(2)
     delimiter = col_delim.selectbox("Delimitador", options=[";", ",", "\\t"], index=0)
     enc = col_enc.selectbox("Codificação", options=["latin-1", "utf-8"], index=0)
@@ -305,14 +319,15 @@ def data_source_ui():
         except Exception as e:
             st.error(f"Erro ao ler CSV: {e}")
 
-    # Sample fallback
-    st.caption("Ou use o dado de exemplo: `sample_data/baseKelm.csv`")
-    if st.button("Usar dado de exemplo"):
+    # Botão para restaurar dados padrão
+    st.markdown("#### Restaurar Dados Padrão")
+    st.caption("Use o botão abaixo para restaurar os dados padrão do sistema")
+    if st.button("🔄 Restaurar baseKelm.csv (padrão)"):
         try:
             df = read_csv(os.path.join("sample_data", "baseKelm.csv"))
-            return df, "baseKelm.csv"
+            return df, "baseKelm.csv (restaurado)"
         except Exception as e:
-            st.error(f"Erro ao carregar exemplo: {e}")
+            st.error(f"Erro ao carregar dados padrão: {e}")
     return None, None
 
 # -----------------------------
@@ -327,6 +342,7 @@ if page == "Upload de Arquivo":
 
         # Save to session
         st.session_state.data = df
+        st.session_state.data_source = fname
 
         # Log upload via DataManager (local storage, substitui anteriores)
         if st.session_state.auth["logged_in"]:
@@ -342,6 +358,9 @@ if page == "Upload de Arquivo":
                 }]
             except Exception as e:
                 st.warning(f"Não foi possível registrar upload localmente: {e}")
+        
+        # Forçar rerun para atualizar a interface
+        st.rerun()
 
 # -----------------------------
 # Page: Dashboard
@@ -351,6 +370,8 @@ if page == "Dashboard":
     if st.session_state.data is None:
         st.info("Carregue um CSV na página **Upload de Arquivo** ou use o dado de exemplo.")
     else:
+        # Mostrar fonte dos dados no dashboard
+        st.info(f"📊 **Analisando dados de:** {st.session_state.data_source}")
         df = st.session_state.data.copy()
         df_f = filters_ui(df)
 
