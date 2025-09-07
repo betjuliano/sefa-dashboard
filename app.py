@@ -1010,8 +1010,13 @@ if page == "Análise Detalhada":
                     cluster_data = df_analysis.copy()
                     cluster_data['Cluster'] = cluster_labels
                     
-                    cluster_stats = cluster_data.groupby('Cluster')[dimension_names].mean()
-                    st.dataframe(cluster_stats.style.format('{:.2f}'), use_container_width=True)
+                    # Use dimension score columns instead of dimension names
+                    dimension_score_cols = [f'{dim}_score' for dim in dimension_names if f'{dim}_score' in cluster_data.columns]
+                    if dimension_score_cols:
+                        cluster_stats = cluster_data.groupby('Cluster')[dimension_score_cols].mean()
+                        st.dataframe(cluster_stats.style.format('{:.2f}'), use_container_width=True)
+                    else:
+                        st.warning("Não foi possível calcular estatísticas dos clusters - colunas de dimensões não encontradas.")
                     
                     # Interpretation
                     st.markdown("#### 💡 Interpretação")
