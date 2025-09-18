@@ -12,6 +12,14 @@ from .utils import (
     get_backup_directory
 )
 from .init_storage import initialize_local_storage
+from .text_normalizer import TextNormalizer
+from .scale_converter import ScaleConverter, ScaleStats
+from .questionnaire_processor import (
+    QuestionnaireProcessor, 
+    QuestionStats, 
+    DimensionStats, 
+    ProcessingResults
+)
 
 __all__ = [
     'UserSession',
@@ -25,5 +33,12 @@ __all__ = [
     'get_file_path',
     'validate_file_path',
     'get_backup_directory',
-    'initialize_local_storage'
+    'initialize_local_storage',
+    'TextNormalizer',
+    'ScaleConverter',
+    'ScaleStats',
+    'QuestionnaireProcessor',
+    'QuestionStats',
+    'DimensionStats',
+    'ProcessingResults'
 ]

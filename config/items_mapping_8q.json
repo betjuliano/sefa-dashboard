@@ -1,0 +1,51 @@
+{
+  "dimensions": {
+    "Qualidade do Sistema": [
+      "O Portal é fácil de usar.",
+      "É fácil localizar os dados e as informações no Portal.",
+      "A navegação pelo Portal é intuitiva.",
+      "O Portal funciona sem falhas."
+    ],
+    "Qualidade da Informação": [
+      "As informações são fáceis de entender.",
+      "As informações são precisas.",
+      "As informações disponibilizadas estão atualizadas."
+    ],
+    "Qualidade da Operação": [
+      "Consigo obter o que preciso no menor tempo possível."
+    ]
+  },
+  "likert_order": [
+    "Discordo totalmente",
+    "Discordo",
+    "Neutro",
+    "Concordo",
+    "Concordo totalmente"
+  ],
+  "likert_map": {
+    "Discordo totalmente": 1,
+    "Discordo": 2,
+    "Neutro": 3,
+    "Nem concordo nem discordo": 3,
+    "Concordo": 4,
+    "Concordo totalmente": 5,
+    "Não sei": null
+  },
+  "satisfaction_field": "Qual o seu nível de satisfação com o Portal da Transparência do RS?",
+  "satisfaction_map": {
+    "Muito insatisfeito": 1,
+    "Insatisfeito": 2,
+    "Neutro": 3,
+    "Nem satisfeito nem insatisfeito": 3,
+    "Satisfeito": 4,
+    "Muito satisfeito": 5,
+    "Não sei": null
+  },
+  "comments_field": "Deixe aqui seus comentários, avaliações ou sugestões sobre o Portal da Transparência do RS.",
+  "profile_fields": {
+    "Sexo": "Qual o seu sexo?",
+    "Idade": "Qual a sua idade?",
+    "Escolaridade": "Qual seu nível de escolaridade completo?",
+    "Funcionario_Publico": "Você é funcionário público?"
+  }
+}

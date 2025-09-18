@@ -25,12 +25,20 @@ from scipy.stats import chi2_contingency, pearsonr, spearmanr
 
 from dotenv import load_dotenv
 
-# Optional: Supabase
-try:
-    from supabase import create_client, Client
-except Exception:
-    create_client = None
-    Client = None
+# ===== NOVO SISTEMA DE PROCESSAMENTO =====
+from app_integration import (
+    app_integration,
+    update_global_variables as new_update_global_variables,
+    filter_by_question_set as new_filter_by_question_set,
+    compute_metrics as new_compute_metrics,
+    normalize_likert as new_normalize_likert,
+    normalize_satisfaction as new_normalize_satisfaction,
+    add_sidebar_enhancements
+)
+# ==========================================
+
+
+# Supabase removido - usando apenas armazenamento local
 
 load_dotenv()
 
@@ -42,12 +50,25 @@ st.set_page_config(
 
 # -----------------------------
 # Utils
-# -----------------------------
+# Load configuration
 @st.cache_resource
 def load_mapping(path: str):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
+def get_mapping_for_question_set(question_set: str):
+    """Get the appropriate mapping based on question set"""
+    if question_set == "8 questões":
+        return load_mapping(os.path.join("config", "items_mapping_8q.json"))
+    else:
+        return load_mapping(os.path.join("config", "items_mapping.json"))
+
+def update_global_variables(question_set: str):
+    """Atualiza as variáveis globais baseado no conjunto de questões selecionado - NOVO SISTEMA"""
+    # Usar o novo sistema integrado
+    new_update_global_variables(question_set)
+
+# Initialize with default mapping (will be updated based on question set)
 MAPPING = load_mapping(os.path.join("config", "items_mapping.json"))
 
 DIMENSIONS = MAPPING["dimensions"]
@@ -59,16 +80,7 @@ PROFILE_FIELDS = MAPPING["profile_fields"]
 
 DEFAULT_GOAL = float(os.getenv("DEFAULT_GOAL", "4.0"))
 
-# Supabase client (optional)
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-sb_client = None
-if SUPABASE_URL and SUPABASE_ANON_KEY and create_client:
-    try:
-        sb_client: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-    except Exception as e:
-        st.sidebar.warning(f"Supabase não inicializado: {e}")
-        sb_client = None
+# Sistema usando apenas armazenamento local
 
 # Session state
 from core.data_manager import DataManager
@@ -107,12 +119,7 @@ def login_ui():
         st.sidebar.info("Registro indisponível no modo demo. Use qualquer email/senha em 'Entrar'.")
 
 def logout_btn():
-    if st.sidebar.button("Sair"):
-        if sb_client:
-            try:
-                sb_client.auth.sign_out()
-            except Exception:
-                pass
+    if st.sidebar.button("🚪 Logout"):
         st.session_state.auth = {"email": None, "logged_in": False}
         st.rerun()
 
@@ -120,78 +127,59 @@ def logout_btn():
 # Data processing
 # -----------------------------
 def normalize_likert(series: pd.Series) -> pd.Series:
-    # Strip & standardize strings, map to numbers, keep NaN for "Não sei"
-    s = series.astype(str).str.strip()
-    s = s.replace("nan", np.nan)
-    return s.map(LIKERT_MAP)
+    """Normaliza escala Likert - NOVO SISTEMA"""
+    # Usar o novo ScaleConverter
+    return new_normalize_likert(series)
 
 def normalize_satisfaction(series: pd.Series) -> pd.Series:
-    s = series.astype(str).str.strip().replace("nan", np.nan)
-    return s.map(SAT_MAP)
+    """Normaliza escala de satisfação - NOVO SISTEMA"""
+    # Usar o novo ScaleConverter
+    return new_normalize_satisfaction(series)
+
+def show_preprocessed_stats(df: pd.DataFrame):
+    """Exibe estatísticas dos dados pré-processados se disponíveis"""
+    if 'Media_Respostas' in df.columns and 'Num_Respostas_Validas' in df.columns:
+        st.subheader("📊 Estatísticas dos Dados Pré-processados")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Média Geral", f"{df['Media_Respostas'].mean():.2f}")
+            st.metric("Mediana", f"{df['Media_Respostas'].median():.2f}")
+        
+        with col2:
+            st.metric("Desvio Padrão", f"{df['Media_Respostas'].std():.2f}")
+            st.metric("Amplitude", f"{df['Media_Respostas'].max() - df['Media_Respostas'].min():.2f}")
+        
+        with col3:
+            st.metric("Valor Mínimo", f"{df['Media_Respostas'].min():.2f}")
+            st.metric("Valor Máximo", f"{df['Media_Respostas'].max():.2f}")
+        
+        # Distribuição de respostas válidas
+        st.subheader("📈 Distribuição de Respostas Válidas por Linha")
+        valid_counts = df['Num_Respostas_Validas'].value_counts().sort_index()
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            for count, freq in valid_counts.items():
+                st.write(f"**{count} respostas:** {freq} linhas ({freq/len(df)*100:.1f}%)")
+        
+        with col2:
+            # Gráfico de barras da distribuição
+            import plotly.express as px
+            fig = px.bar(
+                x=valid_counts.index, 
+                y=valid_counts.values,
+                labels={'x': 'Número de Respostas Válidas', 'y': 'Frequência'},
+                title="Distribuição de Respostas Válidas"
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
 def compute_metrics(df: pd.DataFrame, goal: float):
-    results = {
-        "items": {},  # per item: mean, n, freq (counts and %)
-        "dimensions": {},  # per dimension: mean of item means
-        "satisfaction": None,
-        "insights": {"prioritarios": [], "acoes": [], "bons": []},
-    }
+    """Calcula métricas do questionário - NOVO SISTEMA"""
+    # Usar o novo sistema integrado
+    return new_compute_metrics(df, goal)
 
-    # Frequencies and means per item
-    for dim_name, items in DIMENSIONS.items():
-        for item in items:
-            col = df[item]
-            numeric = normalize_likert(col)
-            mean_val = numeric.mean(skipna=True)
-            n = numeric.notna().sum()
-
-            # frequency counts in original labels (ordered)
-            counts = col.value_counts(dropna=False).to_dict()
-            # enforce full order
-            freq_counts = {label: int(counts.get(label, 0)) for label in (LIKERT_ORDER + ["Não sei"])}
-            total = sum(v for k, v in freq_counts.items() if k != "Não sei")
-            freq_pct = {k: (v / total * 100 if total > 0 else 0) for k, v in freq_counts.items() if k != "Não sei"}
-
-            results["items"][item] = {
-                "dimension": dim_name,
-                "mean": float(mean_val) if mean_val is not None and not np.isnan(mean_val) else None,
-                "n": int(n),
-                "freq_counts": freq_counts,
-                "freq_pct": freq_pct,
-            }
-
-    # Dimension means (average of item means)
-    for dim_name, items in DIMENSIONS.items():
-        means = [results["items"][it]["mean"] for it in items if results["items"][it]["mean"] is not None]
-        dim_mean = float(np.mean(means)) if len(means) else None
-        results["dimensions"][dim_name] = {"mean": dim_mean, "n_items": len(means)}
-
-    # Satisfaction overall (if column exists)
-    if SAT_FIELD in df.columns:
-        sat_mean = normalize_satisfaction(df[SAT_FIELD]).mean(skipna=True)
-        results["satisfaction"] = float(sat_mean) if sat_mean is not None and not np.isnan(sat_mean) else None
-
-    # Insights
-    for item, info in results["items"].items():
-        mean_val = info["mean"]
-        if mean_val is None:
-            continue
-        if mean_val < (0.5 * goal):
-            results["insights"]["prioritarios"].append((item, info["dimension"], mean_val))
-        elif mean_val < goal:
-            results["insights"]["acoes"].append((item, info["dimension"], mean_val))
-        else:
-            results["insights"]["bons"].append((item, info["dimension"], mean_val))
-
-    # Sort insights by mean ascending (prioritize worst first)
-    for k in results["insights"]:
-        results["insights"][k] = sorted(results["insights"][k], key=lambda x: x[2])
-
-    return results
-
-# -----------------------------
-# Statistical Analysis Functions
-# -----------------------------
 
 def prepare_data_for_analysis(df: pd.DataFrame):
     """Prepare data for statistical analysis"""
@@ -208,10 +196,20 @@ def prepare_data_for_analysis(df: pd.DataFrame):
         df_analysis[SAT_FIELD] = normalize_satisfaction(df_analysis[SAT_FIELD])
     
     # Create dimension scores (mean of items in each dimension)
+    print(f"DEBUG: DIMENSIONS = {DIMENSIONS}")
+    print(f"DEBUG: df_analysis.columns = {list(df_analysis.columns)}")
+    
     for dim_name, items in DIMENSIONS.items():
         available_items = [item for item in items if item in df_analysis.columns]
+        print(f"DEBUG: For dimension '{dim_name}', items = {items}")
+        print(f"DEBUG: Available items = {available_items}")
         if available_items:
             df_analysis[f'{dim_name}_score'] = df_analysis[available_items].mean(axis=1)
+            print(f"DEBUG: Created score column '{dim_name}_score'")
+        else:
+            print(f"DEBUG: No available items for dimension '{dim_name}'")
+    
+    print(f"DEBUG: Final columns after score creation = {list(df_analysis.columns)}")
     
     # Encode categorical variables
     le_sexo = LabelEncoder()
@@ -224,8 +222,10 @@ def prepare_data_for_analysis(df: pd.DataFrame):
     if PROFILE_FIELDS["Escolaridade"] in df_analysis.columns:
         df_analysis['escolaridade_encoded'] = le_escolaridade.fit_transform(df_analysis[PROFILE_FIELDS["Escolaridade"]].fillna('Não informado'))
     
-    if PROFILE_FIELDS["Servidor Público"] in df_analysis.columns:
-        df_analysis['servidor_encoded'] = le_servidor.fit_transform(df_analysis[PROFILE_FIELDS["Servidor Público"]].fillna('Não informado'))
+    # Handle different field names for public servant field
+    servidor_field = PROFILE_FIELDS.get("Servidor Público") or PROFILE_FIELDS.get("Funcionario_Publico")
+    if servidor_field and servidor_field in df_analysis.columns:
+        df_analysis['servidor_encoded'] = le_servidor.fit_transform(df_analysis[servidor_field].fillna('Não informado'))
     
     return df_analysis
 
@@ -351,14 +351,57 @@ def filters_ui(df: pd.DataFrame):
 
     # Idade
     if PROFILE_FIELDS["Idade"] in df.columns:
-        min_age = int(np.nanmin(df[PROFILE_FIELDS["Idade"]]))
-        max_age = int(np.nanmax(df[PROFILE_FIELDS["Idade"]]))
-        default_age = tuple(saved.get("idade", (min_age, max_age)))
-        age_min, age_max = st.sidebar.slider("Idade", min_value=min_age, max_value=max_age, value=default_age)
-        df_filtered = df_filtered[
-            (df_filtered[PROFILE_FIELDS["Idade"]] >= age_min) &
-            (df_filtered[PROFILE_FIELDS["Idade"]] <= age_max)
-        ]
+        # Verificar se há dados válidos na coluna de idade
+        idade_col = df[PROFILE_FIELDS["Idade"]]
+        idade_valida = idade_col.dropna()
+        
+        if len(idade_valida) > 0:
+            # Tentar converter valores para numérico se possível
+            try:
+                # Se os valores são strings como "25-34 anos", extrair o primeiro número
+                idade_numerica = []
+                for val in idade_valida:
+                    if isinstance(val, str):
+                        # Extrair números da string (ex: "25-34 anos" -> 25)
+                        import re
+                        numeros = re.findall(r'\d+', str(val))
+                        if numeros:
+                            idade_numerica.append(int(numeros[0]))
+                    elif pd.notna(val):
+                        try:
+                            idade_numerica.append(int(float(val)))
+                        except:
+                            pass
+                
+                if idade_numerica:
+                    min_age = min(idade_numerica)
+                    max_age = max(idade_numerica)
+                    default_age = tuple(saved.get("idade", (min_age, max_age)))
+                    age_min, age_max = st.sidebar.slider("Idade", min_value=min_age, max_value=max_age, value=default_age)
+                    
+                    # Filtrar baseado nos valores originais
+                    mask_idade = pd.Series([True] * len(df_filtered))
+                    for idx, val in enumerate(df_filtered[PROFILE_FIELDS["Idade"]]):
+                        if pd.notna(val):
+                            if isinstance(val, str):
+                                numeros = re.findall(r'\d+', str(val))
+                                if numeros:
+                                    idade_num = int(numeros[0])
+                                    mask_idade.iloc[idx] = age_min <= idade_num <= age_max
+                            else:
+                                try:
+                                    idade_num = int(float(val))
+                                    mask_idade.iloc[idx] = age_min <= idade_num <= age_max
+                                except:
+                                    pass
+                    
+                    df_filtered = df_filtered[mask_idade]
+                else:
+                    st.sidebar.info("⚠️ Dados de idade não disponíveis para filtro")
+            except Exception as e:
+                st.sidebar.warning(f"⚠️ Erro ao processar dados de idade: {str(e)}")
+        else:
+            st.sidebar.info("⚠️ Dados de idade não disponíveis para filtro")
 
     # Sexo
     if PROFILE_FIELDS["Sexo"] in df.columns:
@@ -377,12 +420,13 @@ def filters_ui(df: pd.DataFrame):
             df_filtered = df_filtered[df_filtered[PROFILE_FIELDS["Escolaridade"]] == esc_sel]
 
     # Servidor Público
-    if PROFILE_FIELDS["Servidor Público"] in df.columns:
-        sp_opts = ["Todos"] + sorted([x for x in df[PROFILE_FIELDS["Servidor Público"]].dropna().unique().tolist()])
+    servidor_field = PROFILE_FIELDS.get("Servidor Público") or PROFILE_FIELDS.get("Funcionario_Publico")
+    if servidor_field and servidor_field in df.columns:
+        sp_opts = ["Todos"] + sorted([x for x in df[servidor_field].dropna().unique().tolist()])
         default_sp = saved.get("servidor_publico", "Todos")
         sp_sel = st.sidebar.selectbox("Servidor Público", options=sp_opts, index=sp_opts.index(default_sp) if default_sp in sp_opts else 0)
         if sp_sel != "Todos":
-            df_filtered = df_filtered[df_filtered[PROFILE_FIELDS["Servidor Público"]] == sp_sel]
+            df_filtered = df_filtered[df_filtered[servidor_field] == sp_sel]
 
     # salvar filtros atualizados, se logado
     if st.session_state.auth["logged_in"]:
@@ -392,7 +436,7 @@ def filters_ui(df: pd.DataFrame):
                 "idade": (age_min, age_max) if PROFILE_FIELDS["Idade"] in df.columns else saved.get("idade"),
                 "sexo": sex_sel if PROFILE_FIELDS["Sexo"] in df.columns else saved.get("sexo"),
                 "escolaridade": esc_sel if PROFILE_FIELDS["Escolaridade"] in df.columns else saved.get("escolaridade"),
-                "servidor_publico": sp_sel if PROFILE_FIELDS["Servidor Público"] in df.columns else saved.get("servidor_publico"),
+                "servidor_publico": sp_sel if servidor_field and servidor_field in df.columns else saved.get("servidor_publico"),
             }
             updated = dict(current or {}) if isinstance(current, dict) else {}
             updated["saved_filters"] = new_saved
@@ -428,6 +472,41 @@ if st.session_state.auth["logged_in"] and abs(goal - goal_default) > 1e-9:
     st.session_state.dm.save_user_preferences(st.session_state.auth["email"], new_prefs)
 
 st.sidebar.markdown("---")
+
+# Seletor de conjunto de questões
+if "question_set" not in st.session_state:
+    st.session_state.question_set = "Completo (26 questões)"
+
+question_set = st.sidebar.radio(
+    "Conjunto de Questões",
+    options=["Completo (26 questões)", "20 questões", "8 questões"],
+    index=["Completo (26 questões)", "20 questões", "8 questões"].index(st.session_state.question_set)
+)
+
+# Atualizar variáveis globais se o conjunto mudou
+if question_set != st.session_state.question_set:
+    update_global_variables(question_set)
+    
+st.session_state.question_set = question_set
+
+# Adicionar melhorias do novo sistema
+add_sidebar_enhancements()
+
+# Upload específico para 8 questões
+if question_set == "8 questões":
+    uploaded_8q = st.sidebar.file_uploader(
+        "Upload base 8 questões (opcional)",
+        type=["csv"],
+        key="upload_8q"
+    )
+    if uploaded_8q:
+        st.session_state.uploaded_8q = uploaded_8q
+        st.session_state.data_8q_source = uploaded_8q.name
+    else:
+        st.session_state.uploaded_8q = None
+        st.session_state.data_8q_source = "basetransp.csv (padrão)"
+
+st.sidebar.markdown("---")
 st.sidebar.caption("CSV padrão: separador `;` e codificação `latin-1`.")
 
 # -----------------------------
@@ -435,6 +514,7 @@ st.sidebar.caption("CSV padrão: separador `;` e codificação `latin-1`.")
 # -----------------------------
 pages = {
     "Dashboard": "dashboard",
+    "Portal Transparência": "portal_transparencia",
     "Upload de Arquivo": "upload",
     "Análise Detalhada": "analysis",
     "Perfil": "profile",
@@ -443,17 +523,13 @@ pages = {
 page = st.sidebar.radio("Navegação", options=list(pages.keys()))
 
 # -----------------------------
-# Load data (uploaded or sample)
+# Question Set Filtering
 # -----------------------------
-if "data" not in st.session_state:
-    # Carregar dados padrão automaticamente
-    try:
-        default_df = read_csv(os.path.join("sample_data", "baseKelm.csv"))
-        st.session_state.data = default_df
-        st.session_state.data_source = "baseKelm.csv (padrão)"
-    except Exception as e:
-        st.session_state.data = None
-        st.session_state.data_source = None
+def filter_by_question_set(df: pd.DataFrame, question_set: str):
+    """Filtra o dataframe baseado no conjunto de questões selecionado - NOVO SISTEMA"""
+    # Usar o novo sistema integrado
+    return new_filter_by_question_set(df, question_set)
+
 
 def read_csv(uploaded_file, delimiter=";", encoding="latin-1"):
     return pd.read_csv(uploaded_file, sep=delimiter, encoding=encoding)
@@ -479,15 +555,31 @@ def data_source_ui():
         except Exception as e:
             st.error(f"Erro ao ler CSV: {e}")
 
-    # Botão para restaurar dados padrão
+    # Botões para restaurar dados padrão
     st.markdown("#### Restaurar Dados Padrão")
-    st.caption("Use o botão abaixo para restaurar os dados padrão do sistema")
-    if st.button("🔄 Restaurar baseKelm.csv (padrão)"):
-        try:
-            df = read_csv(os.path.join("sample_data", "baseKelm.csv"))
-            return df, "baseKelm.csv (restaurado)"
-        except Exception as e:
-            st.error(f"Erro ao carregar dados padrão: {e}")
+    st.caption("Escolha qual conjunto de dados padrão deseja carregar")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🔄 Restaurar baseKelm.csv\n(Completo - 20 questões)", use_container_width=True):
+            try:
+                df = read_csv(os.path.join("sample_data", "baseKelm.csv"))
+                # Automaticamente definir para "20 questões" para aplicar filtro
+                st.session_state.question_set = "20 questões"
+                return df, "baseKelm.csv (restaurado)"
+            except Exception as e:
+                st.error(f"Erro ao carregar baseKelm.csv: {e}")
+    
+    with col2:
+        if st.button("🔄 Restaurar basetransp.csv\n(8 questões)", use_container_width=True):
+            try:
+                df = read_csv(os.path.join("data", "basetransp.csv"))
+                # Automaticamente definir para "8 questões"
+                st.session_state.question_set = "8 questões"
+                return df, "basetransp.csv (restaurado)"
+            except Exception as e:
+                st.error(f"Erro ao carregar basetransp.csv: {e}")
     return None, None
 
 # -----------------------------
@@ -531,8 +623,15 @@ if page == "Dashboard":
         st.info("Carregue um CSV na página **Upload de Arquivo** ou use o dado de exemplo.")
     else:
         # Mostrar fonte dos dados no dashboard
-        st.info(f"📊 **Analisando dados de:** {st.session_state.data_source}")
+        st.info(f"📊 **Analisando dados de:** {st.session_state.data_source} | Conjunto: {st.session_state.question_set}")
         df = st.session_state.data.copy()
+        # Aplicar filtro de conjunto de questões
+        df = filter_by_question_set(df, st.session_state.question_set)
+        
+        # Exibir estatísticas dos dados pré-processados se disponíveis
+        if st.session_state.question_set == "8 questões":
+            show_preprocessed_stats(df)
+        
         df_f = filters_ui(df)
 
         metrics = compute_metrics(df_f, goal)
@@ -546,12 +645,17 @@ if page == "Dashboard":
 
         # Radar chart of dimensions
         st.subheader("Radar por Dimensão")
-        r_vals = [metrics["dimensions"][d]["mean"] for d in DIMENSIONS.keys()]
+        r_vals = [metrics["dimensions"][d]["mean"] if metrics["dimensions"][d]["mean"] is not None else 0 for d in DIMENSIONS.keys()]
         radar_cat = list(DIMENSIONS.keys())
         fig = go.Figure()
         fig.add_trace(go.Scatterpolar(r=r_vals, theta=radar_cat, fill="toself", name="Média"))
         fig.update_layout(
-            polar=dict(radialaxis=dict(visible=True, range=[1, 5])),
+            polar=dict(radialaxis=dict(
+                visible=True, 
+                range=[1, 5],
+                tickvals=[1, 2, 3, 4, 5],
+                ticktext=['1', '2', '3', '4', '5']
+            )),
             showlegend=False,
             height=450,
         )
@@ -756,7 +860,7 @@ if page == "Dashboard":
         )
         
         # Linha de atenção
-        pri, aco, bons = metrics["insights"]["prioritarios"], metrics["insights"]["acoes"], metrics["insights"]["bons"]
+        pri, aco, bons = metrics["insights"]["criticos"], metrics["insights"]["acoes"], metrics["insights"]["bons"]
         all_items_stats = []
         for dim_name, its in DIMENSIONS.items():
             for it in its:
@@ -769,7 +873,7 @@ if page == "Dashboard":
             st.markdown(
                 f"""
                 <div class="alert-warning">
-                    <strong>⚠️ Atenção:</strong> {len(pri)+len(aco)} itens abaixo da meta — {len(pri)} prioritários. 
+                    <strong>⚠️ Atenção:</strong> {len(pri)+len(aco)} itens abaixo da meta — {len(pri)} críticos. 
                     <br><strong>Pior desempenho:</strong> [{worst_dim}] {worst_item} com média {worst_mean:.2f} {gap_txt}.
                 </div>
                 """,
@@ -883,11 +987,11 @@ if page == "Dashboard":
         
         # --- Aba: Lista completa (mantém agrupamento em 3 colunas com filtro) ---
         with tab_list:
-            insight_options = {"Prioritários": "prioritarios", "Abaixo da meta": "acoes", "Bons (≥ meta)": "bons"}
+            insight_options = {"Críticos": "criticos", "Abaixo da meta": "acoes", "Bons (≥ meta)": "bons"}
             sel = st.multiselect("Filtrar tipos de insight", list(insight_options.keys()), default=list(insight_options.keys()))
-            only_pri = st.checkbox("Mostrar apenas prioritários", value=False, key="only_pri_list")
+            only_pri = st.checkbox("Mostrar apenas críticos", value=False, key="only_pri_list")
             if only_pri:
-                sel = ["Prioritários"]
+                sel = ["Críticos"]
             selected_keys = [insight_options[k] for k in sel]
         
             c1, c2, c3 = st.columns(3)
@@ -900,8 +1004,8 @@ if page == "Dashboard":
                 for item, dim, mean in items:
                     container.write(f"- **[{dim}]** {item} → média **{mean:.2f}**")
         
-            if "prioritarios" in selected_keys:
-                render_list(c1, pri, "🔴 Prioritários (muito abaixo da meta)", "red")
+            if "criticos" in selected_keys:
+                render_list(c1, pri, "🔴 Críticos (muito abaixo da meta)", "red")
             else:
                 c1.write("—")
             if "acoes" in selected_keys:
@@ -958,97 +1062,27 @@ if page == "Análise Detalhada":
         st.info("Carregue dados na página **Upload de Arquivo** primeiro.")
     else:
         df = st.session_state.data.copy()
+        # Aplicar filtro de conjunto de questões
+        df = filter_by_question_set(df, st.session_state.question_set)
         df_f = filters_ui(df)
+        
+        # Ensure global variables are updated for current question set
+        update_global_variables(st.session_state.question_set)
         
         # Prepare data for analysis
         df_analysis = prepare_data_for_analysis(df_f)
         
-        st.info(f"📊 **Analisando:** {len(df_analysis)} respostas válidas")
+        st.info(f"📊 **Analisando:** {len(df_analysis)} respostas válidas | Dimensões: {list(DIMENSIONS.keys())}")
         
         # Tabs for different analyses
-        tab1, tab2, tab3, tab4 = st.tabs([
-            "📈 Regressões por Dimensão", 
+        tab1, tab2 = st.tabs([ 
             "🎯 Regressões vs Satisfação", 
-            "🔍 Análise Multivariada",
             "📊 Correlações e Associações"
         ])
         
         # Tab 1: Regressions by Dimension
+        # Tab 1: Satisfaction Regression
         with tab1:
-            st.subheader("Regressões das Dimensões vs Perfil Demográfico")
-            st.caption("Análise de como variáveis demográficas influenciam cada dimensão de qualidade")
-            
-            dimension_sel = st.selectbox(
-                "Selecione a dimensão para análise:",
-                options=list(DIMENSIONS.keys()),
-                key="regression_dimension"
-            )
-            
-            if st.button("🔍 Executar Regressão", key="run_regression"):
-                model, feature_names = regression_analysis(df_analysis, dimension_sel)
-                
-                if model is not None:
-                    st.success(f"✅ Regressão executada com sucesso para **{dimension_sel}**")
-                    
-                    # Display results
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("#### 📊 Resumo do Modelo")
-                        st.write(f"**R² Ajustado:** {model.rsquared_adj:.3f}")
-                        st.write(f"**F-statístico:** {model.fvalue:.2f}")
-                        st.write(f"**p-valor (F):** {model.f_pvalue:.4f}")
-                        st.write(f"**Observações:** {int(model.nobs)}")
-                        
-                        if model.f_pvalue < 0.05:
-                            st.success("✅ Modelo estatisticamente significativo (p < 0.05)")
-                        else:
-                            st.warning("⚠️ Modelo não estatisticamente significativo (p ≥ 0.05)")
-                    
-                    with col2:
-                        st.markdown("#### 📈 Coeficientes")
-                        coef_df = pd.DataFrame({
-                            'Variável': ['Intercepto'] + feature_names,
-                            'Coeficiente': model.params.values,
-                            'Erro Padrão': model.bse.values,
-                            't-valor': model.tvalues.values,
-                            'p-valor': model.pvalues.values
-                        })
-                        
-                        # Highlight significant coefficients
-                        def highlight_significant(row):
-                            if row['p-valor'] < 0.05:
-                                return ['background-color: #d4edda'] * len(row)
-                            return [''] * len(row)
-                        
-                        st.dataframe(
-                            coef_df.style.apply(highlight_significant, axis=1).format({
-                                'Coeficiente': '{:.3f}',
-                                'Erro Padrão': '{:.3f}',
-                                't-valor': '{:.3f}',
-                                'p-valor': '{:.4f}'
-                            }),
-                            use_container_width=True
-                        )
-                    
-                    # Interpretation
-                    st.markdown("#### 💡 Interpretação")
-                    significant_vars = coef_df[coef_df['p-valor'] < 0.05]
-                    
-                    if len(significant_vars) > 1:  # More than just intercept
-                        st.write("**Variáveis com influência significativa:**")
-                        for _, row in significant_vars.iterrows():
-                            if row['Variável'] != 'Intercepto':
-                                direction = "positiva" if row['Coeficiente'] > 0 else "negativa"
-                                st.write(f"- **{row['Variável']}**: Influência {direction} (β = {row['Coeficiente']:.3f})")
-                    else:
-                        st.info("Nenhuma variável demográfica apresenta influência significativa nesta dimensão.")
-                
-                else:
-                    st.error("❌ Não foi possível executar a regressão. Verifique se há dados suficientes.")
-        
-        # Tab 2: Satisfaction Regression
-        with tab2:
             st.subheader("Regressões das Dimensões vs Satisfação Geral")
             st.caption("Análise de como cada dimensão influencia a satisfação geral")
             
@@ -1056,12 +1090,17 @@ if page == "Análise Detalhada":
                 if st.button("🎯 Executar Análise de Satisfação", key="run_satisfaction"):
                     st.success("✅ Análise de satisfação executada")
                     
-                    # Prepare data
-                    satisfaction_data = df_analysis[[SAT_FIELD] + [f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
+                    # Prepare data - only use score columns that exist in the DataFrame
+                    available_score_cols = [f'{dim}_score' for dim in DIMENSIONS.keys() if f'{dim}_score' in df_analysis.columns]
+                    if not available_score_cols:
+                        st.warning("Nenhuma coluna de score encontrada. Verifique se os dados foram processados corretamente.")
+                        st.stop()
+                    
+                    satisfaction_data = df_analysis[[SAT_FIELD] + available_score_cols].dropna()
                     
                     if len(satisfaction_data) > 10:
                         # Multiple regression
-                        X = satisfaction_data[[f'{dim}_score' for dim in DIMENSIONS.keys()]]
+                        X = satisfaction_data[available_score_cols]
                         y = satisfaction_data[SAT_FIELD]
                         
                         X_with_const = sm.add_constant(X)
@@ -1116,126 +1155,21 @@ if page == "Análise Detalhada":
             else:
                 st.warning("⚠️ Campo de satisfação não encontrado nos dados.")
         
-        # Tab 3: Multivariate Analysis
-        with tab3:
-            st.subheader("Análise Multivariada")
-            st.caption("Análise de Componentes Principais (PCA) e Clustering")
-            
-            if st.button("🔍 Executar Análise Multivariada", key="run_multivariate"):
-                multivariate_result = multivariate_analysis(df_analysis)
-                
-                if multivariate_result is not None:
-                    st.success("✅ Análise multivariada executada com sucesso")
-                    
-                    # PCA Results
-                    st.markdown("#### 📊 Análise de Componentes Principais (PCA)")
-                    
-                    pca = multivariate_result['pca']
-                    pca_result = multivariate_result['pca_result']
-                    dimension_names = multivariate_result['dimension_names']
-                    
-                    # Explained variance
-                    explained_var = pca.explained_variance_ratio_
-                    cumsum_var = np.cumsum(explained_var)
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        st.markdown("##### Variância Explicada")
-                        for i, (var, cumvar) in enumerate(zip(explained_var, cumsum_var)):
-                            st.write(f"**PC{i+1}**: {var:.1%} (Acumulada: {cumvar:.1%})")
-                    
-                    with col2:
-                        # PCA Scree Plot
-                        fig = go.Figure()
-                        fig.add_trace(go.Scatter(
-                            x=list(range(1, len(explained_var)+1)),
-                            y=explained_var,
-                            mode='lines+markers',
-                            name='Variância Explicada'
-                        ))
-                        fig.update_layout(
-                            title="Scree Plot - Variância Explicada por Componente",
-                            xaxis_title="Componente Principal",
-                            yaxis_title="Variância Explicada",
-                            height=300
-                        )
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    # PCA Loadings
-                    st.markdown("##### Cargas dos Componentes Principais")
-                    loadings_df = pd.DataFrame(
-                        pca.components_.T,
-                        columns=[f'PC{i+1}' for i in range(len(dimension_names))],
-                        index=dimension_names
-                    )
-                    st.dataframe(loadings_df.style.format('{:.3f}'), use_container_width=True)
-                    
-                    # Clustering Results
-                    st.markdown("#### 🎯 Análise de Clustering")
-                    
-                    optimal_k = multivariate_result['optimal_k']
-                    cluster_labels = multivariate_result['cluster_labels']
-                    silhouette_scores = multivariate_result['silhouette_scores']
-                    
-                    st.write(f"**Número ótimo de clusters:** {optimal_k}")
-                    st.write(f"**Score de Silhouette:** {silhouette_scores[np.argmax(silhouette_scores)]:.3f}")
-                    
-                    # Cluster visualization (first 2 PCs)
-                    if len(pca_result) > 1:
-                        fig = px.scatter(
-                            x=pca_result[:, 0],
-                            y=pca_result[:, 1],
-                            color=cluster_labels,
-                            title="Clusters nos Primeiros 2 Componentes Principais",
-                            labels={'x': 'PC1', 'y': 'PC2'},
-                            color_discrete_sequence=px.colors.qualitative.Set1
-                        )
-                        fig.update_layout(height=400)
-                        st.plotly_chart(fig, use_container_width=True)
-                    
-                    # Cluster characteristics
-                    st.markdown("##### Características dos Clusters")
-                    cluster_data = df_analysis.copy()
-                    cluster_data['Cluster'] = cluster_labels
-                    
-                    # Use dimension score columns instead of dimension names
-                    dimension_score_cols = [f'{dim}_score' for dim in dimension_names if f'{dim}_score' in cluster_data.columns]
-                    if dimension_score_cols:
-                        cluster_stats = cluster_data.groupby('Cluster')[dimension_score_cols].mean()
-                        st.dataframe(cluster_stats.style.format('{:.2f}'), use_container_width=True)
-                    else:
-                        st.warning("Não foi possível calcular estatísticas dos clusters - colunas de dimensões não encontradas.")
-                    
-                    # Interpretation
-                    st.markdown("#### 💡 Interpretação")
-                    st.write("**Análise PCA:**")
-                    if explained_var[0] > 0.5:
-                        st.write(f"- O primeiro componente explica {explained_var[0]:.1%} da variância")
-                        st.write("- Há uma dimensão dominante na qualidade do sistema")
-                    else:
-                        st.write("- As dimensões são relativamente independentes")
-                    
-                    st.write("**Análise de Clustering:**")
-                    if optimal_k > 2:
-                        st.write(f"- Identificados {optimal_k} grupos distintos de usuários")
-                        st.write("- Sugere segmentação para estratégias diferenciadas")
-                    else:
-                        st.write("- Usuários formam grupos relativamente homogêneos")
-                
-                else:
-                    st.error("❌ Não foi possível executar análise multivariada. Verifique os dados.")
-        
-        # Tab 4: Correlations and Associations
-        with tab4:
+        # Tab 2: Correlations and Associations
+        with tab2:
             st.subheader("Correlações e Associações")
             st.caption("Análise de correlações entre variáveis e testes de associação")
             
             if st.button("📊 Executar Análise de Correlações", key="run_correlations"):
                 st.success("✅ Análise de correlações executada")
                 
-                # Prepare correlation data
-                corr_data = df_analysis[[f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
+                # Prepare correlation data - only use score columns that exist
+                available_score_cols = [f'{dim}_score' for dim in DIMENSIONS.keys() if f'{dim}_score' in df_analysis.columns]
+                if not available_score_cols:
+                    st.warning("Nenhuma coluna de score encontrada para análise de correlações.")
+                    st.stop()
+                
+                corr_data = df_analysis[available_score_cols].dropna()
                 
                 if len(corr_data) > 10:
                     # Correlation matrix
@@ -1279,30 +1213,42 @@ if page == "Análise Detalhada":
                     if PROFILE_FIELDS["Sexo"] in df_analysis.columns:
                         st.markdown("##### Associação: Sexo vs Dimensões")
                         
-                        sex_dim_data = df_analysis[[PROFILE_FIELDS["Sexo"]] + [f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
-                        
-                        if len(sex_dim_data) > 10:
-                            # ANOVA for each dimension
-                            for dim in DIMENSIONS.keys():
-                                groups = [group[f'{dim}_score'].dropna() for name, group in sex_dim_data.groupby(PROFILE_FIELDS["Sexo"])]
-                                if len(groups) > 1 and all(len(g) > 0 for g in groups):
-                                    f_stat, p_val = stats.f_oneway(*groups)
-                                    significance = "✅" if p_val < 0.05 else "❌"
-                                    st.write(f"{significance} **{dim}**: F = {f_stat:.3f}, p = {p_val:.4f}")
+                        available_score_cols = [f'{dim}_score' for dim in DIMENSIONS.keys() if f'{dim}_score' in df_analysis.columns]
+                        if not available_score_cols:
+                            st.warning("Nenhuma coluna de score encontrada para análise por sexo.")
+                        else:
+                            sex_dim_data = df_analysis[[PROFILE_FIELDS["Sexo"]] + available_score_cols].dropna()
+                            
+                            if len(sex_dim_data) > 10:
+                                # ANOVA for each dimension
+                                for dim in available_score_cols:
+                                    dim_name = dim.replace('_score', '')
+                                    groups = [group[dim].dropna() for name, group in sex_dim_data.groupby(PROFILE_FIELDS["Sexo"])]
+                                    if len(groups) > 1 and all(len(g) > 0 for g in groups):
+                                        f_stat, p_val = stats.f_oneway(*groups)
+                                        significance = "✅" if p_val < 0.05 else "❌"
+                                        st.write(f"{significance} **{dim_name}**: F = {f_stat:.3f}, p = {p_val:.4f}")
                     
                     # Servidor Público vs Dimensions
-                    if PROFILE_FIELDS["Servidor Público"] in df_analysis.columns:
+                    # Handle different field names for public servant field
+                    servidor_field = PROFILE_FIELDS.get("Servidor Público") or PROFILE_FIELDS.get("Funcionario_Publico")
+                    if servidor_field and servidor_field in df_analysis.columns:
                         st.markdown("##### Associação: Servidor Público vs Dimensões")
                         
-                        serv_dim_data = df_analysis[[PROFILE_FIELDS["Servidor Público"]] + [f'{dim}_score' for dim in DIMENSIONS.keys()]].dropna()
-                        
-                        if len(serv_dim_data) > 10:
-                            for dim in DIMENSIONS.keys():
-                                groups = [group[f'{dim}_score'].dropna() for name, group in serv_dim_data.groupby(PROFILE_FIELDS["Servidor Público"])]
-                                if len(groups) > 1 and all(len(g) > 0 for g in groups):
-                                    f_stat, p_val = stats.f_oneway(*groups)
-                                    significance = "✅" if p_val < 0.05 else "❌"
-                                    st.write(f"{significance} **{dim}**: F = {f_stat:.3f}, p = {p_val:.4f}")
+                        available_score_cols = [f'{dim}_score' for dim in DIMENSIONS.keys() if f'{dim}_score' in df_analysis.columns]
+                        if not available_score_cols:
+                            st.warning("Nenhuma coluna de score encontrada para análise de servidor público.")
+                        else:
+                            serv_dim_data = df_analysis[[servidor_field] + available_score_cols].dropna()
+                            
+                            if len(serv_dim_data) > 10:
+                                for dim in available_score_cols:
+                                    dim_name = dim.replace('_score', '')
+                                    groups = [group[dim].dropna() for name, group in serv_dim_data.groupby(servidor_field)]
+                                    if len(groups) > 1 and all(len(g) > 0 for g in groups):
+                                        f_stat, p_val = stats.f_oneway(*groups)
+                                        significance = "✅" if p_val < 0.05 else "❌"
+                                        st.write(f"{significance} **{dim_name}**: F = {f_stat:.3f}, p = {p_val:.4f}")
                 
                 else:
                     st.error("❌ Dados insuficientes para análise de correlações.")
@@ -1328,6 +1274,620 @@ if page == "Perfil":
             st.write("Nenhum upload registrado ainda.")
     else:
         st.write("Nenhum upload (modo demo).")
+
+    st.subheader("Análise de Perfil")
+    if "data" in st.session_state and st.session_state.data is not None:
+        df = st.session_state.data.copy()
+        # Aplicar filtro de conjunto de questões
+        df = filter_by_question_set(df, st.session_state.question_set)
+        df_filtered = filters_ui(df)
+        df_analysis = prepare_data_for_analysis(df_filtered)
+
+        if df_analysis.empty:
+            st.warning("Nenhum dado disponível após a aplicação dos filtros.")
+        else:
+            st.info(f"📊 **Analisando:** {len(df_analysis)} respostas válidas (após filtros)")
+            
+            # Iterate over each profile question
+            for profile_key, profile_question in PROFILE_FIELDS.items():
+                if profile_question in df_analysis.columns:
+                    st.markdown(f"---")
+                    st.markdown(f"### {profile_question}")
+                    
+                    # --- Métricas de resumo ---
+                    col1, col2, col3 = st.columns(3)
+                    total_responses = df_analysis[profile_question].count()
+                    unique_responses = df_analysis[profile_question].nunique()
+                    
+                    with col1:
+                        st.metric("Total de Respostas", total_responses)
+                    with col2:
+                        st.metric("Opções Distintas", unique_responses)
+                    with col3:
+                        # Frequency table
+                        freq_table = df_analysis[profile_question].value_counts().reset_index()
+                        freq_table.columns = ['Opção', 'Contagem']
+                        st.dataframe(freq_table, use_container_width=True, height=150)
+
+                    # --- Histograma (largura total) ---
+                    st.markdown("##### Distribuição das Respostas")
+                    try:
+                        # Tratamento especial para idade - categorização por quartis
+                        if 'idade' in profile_question.lower() or 'age' in profile_question.lower():
+                            # Criar categorias por quartis para idade
+                            age_data = df_analysis[profile_question].dropna()
+                            if len(age_data) > 0:
+                                quartiles = age_data.quantile([0.25, 0.5, 0.75])
+                                
+                                def categorize_age(age):
+                                    if pd.isna(age):
+                                        return 'Não informado'
+                                    elif age <= quartiles[0.25]:
+                                        return f'Q1: ≤{quartiles[0.25]:.0f} anos'
+                                    elif age <= quartiles[0.5]:
+                                        return f'Q2: {quartiles[0.25]:.0f}-{quartiles[0.5]:.0f} anos'
+                                    elif age <= quartiles[0.75]:
+                                        return f'Q3: {quartiles[0.5]:.0f}-{quartiles[0.75]:.0f} anos'
+                                    else:
+                                        return f'Q4: >{quartiles[0.75]:.0f} anos'
+                                
+                                df_analysis_temp = df_analysis.copy()
+                                df_analysis_temp[f'{profile_question}_quartil'] = df_analysis_temp[profile_question].apply(categorize_age)
+                                
+                                hist_fig = px.histogram(
+                                    df_analysis_temp.dropna(subset=[f'{profile_question}_quartil']), 
+                                    x=f'{profile_question}_quartil',
+                                    title=f"Distribuição por Quartis - '{profile_question}'",
+                                    text_auto=True
+                                )
+                                hist_fig.update_layout(bargap=0.2, xaxis_title="Quartis de Idade")
+                                st.plotly_chart(hist_fig, use_container_width=True)
+                        else:
+                            hist_fig = px.histogram(
+                                df_analysis.dropna(subset=[profile_question]), 
+                                x=profile_question,
+                                title=f"Distribuição de '{profile_question}'",
+                                text_auto=True
+                            )
+                            hist_fig.update_layout(bargap=0.2)
+                            st.plotly_chart(hist_fig, use_container_width=True)
+                    except Exception as e:
+                        st.warning(f"Não foi possível gerar o histograma: {e}")
+
+                    # --- Radar Chart (largura total) ---
+                    st.markdown("##### Análise por Dimensão (Radar)")
+                    
+                    # Para idade, usar quartis; para outros, usar valores originais
+                    if 'idade' in profile_question.lower() or 'age' in profile_question.lower():
+                        age_data = df_analysis[profile_question].dropna()
+                        if len(age_data) > 0:
+                            quartiles = age_data.quantile([0.25, 0.5, 0.75])
+                            
+                            def categorize_age(age):
+                                if pd.isna(age):
+                                    return 'Não informado'
+                                elif age <= quartiles[0.25]:
+                                    return f'Q1: ≤{quartiles[0.25]:.0f} anos'
+                                elif age <= quartiles[0.5]:
+                                    return f'Q2: {quartiles[0.25]:.0f}-{quartiles[0.5]:.0f} anos'
+                                elif age <= quartiles[0.75]:
+                                    return f'Q3: {quartiles[0.5]:.0f}-{quartiles[0.75]:.0f} anos'
+                                else:
+                                    return f'Q4: >{quartiles[0.75]:.0f} anos'
+                            
+                            df_analysis_temp = df_analysis.copy()
+                            df_analysis_temp[f'{profile_question}_quartil'] = df_analysis_temp[profile_question].apply(categorize_age)
+                            options = df_analysis_temp[f'{profile_question}_quartil'].dropna().unique()
+                            analysis_field = f'{profile_question}_quartil'
+                            df_for_radar = df_analysis_temp
+                        else:
+                            options = []
+                            analysis_field = profile_question
+                            df_for_radar = df_analysis
+                    else:
+                        options = df_analysis[profile_question].dropna().unique()
+                        analysis_field = profile_question
+                        df_for_radar = df_analysis
+                    
+                    # Limitar para não poluir o gráfico
+                    if len(options) > 1 and len(options) < 8:
+                        
+                        radar_fig = go.Figure()
+                        
+                        dimension_score_fields = [f'{dim}_score' for dim in DIMENSIONS.keys() if f'{dim}_score' in df_for_radar.columns]
+                        dimension_names = [dim for dim in DIMENSIONS.keys() if f'{dim}_score' in df_for_radar.columns]
+
+                        if dimension_score_fields:
+                            for option in sorted(options):
+                                df_option = df_for_radar[df_for_radar[analysis_field] == option]
+                                
+                                # Calculate mean for each dimension score for this group
+                                # Keep Likert scale (1-5)
+                                mean_scores_likert = df_option[dimension_score_fields].mean().values
+                                mean_scores = [score if not np.isnan(score) else 1 for score in mean_scores_likert]
+                                
+                                radar_fig.add_trace(go.Scatterpolar(
+                                    r=mean_scores,
+                                    theta=dimension_names,
+                                    fill='toself',
+                                    name=str(option)
+                                ))
+                            
+                            radar_fig.update_layout(
+                                polar=dict(
+                                    radialaxis=dict(
+                                        visible=True,
+                                        range=[1, 5], # Escala de 1 a 5
+                                        tickvals=[1, 2, 3, 4, 5],
+                                        ticktext=['1', '2', '3', '4', '5']
+                                    )
+                                ),
+                                showlegend=True,
+                                title=f"Radar de Escala 1-5 - '{profile_question}'"
+                            )
+                            st.plotly_chart(radar_fig, use_container_width=True)
+                        else:
+                            st.warning(f"As pontuações das dimensões não foram calculadas. Impossível gerar o gráfico de radar.")
+
+                    elif len(options) >= 8:
+                        st.info(f"Muitas opções ({len(options)}) para exibir o gráfico de radar. O gráfico foi omitido para maior clareza.")
+                    else:
+                        st.info("Não há opções suficientes para uma comparação no gráfico de radar.")
+
+    else:
+        st.info("Faça o upload de um arquivo para ver a análise de perfil.")
+
+
+# -----------------------------
+# Page: Portal Transparência
+# -----------------------------
+if page == "Portal Transparência":
+    st.header("🏛️ Portal Transparência - Dashboard de Qualidade")
+    
+    # Carregar dados específicos para Portal Transparência
+    if st.session_state.question_set == "8 questões":
+        if hasattr(st.session_state, 'uploaded_8q') and st.session_state.uploaded_8q is not None:
+            try:
+                df_transp = read_csv(st.session_state.uploaded_8q)
+                data_source_name = st.session_state.uploaded_8q.name
+            except Exception as e:
+                st.error(f"Erro ao carregar arquivo: {e}")
+                df_transp = None
+        else:
+            try:
+                # Usar vírgula como separador para o arquivo basetransp.csv
+                df_transp = pd.read_csv(os.path.join("sample_data", "basetransp.csv"), sep=",", encoding="utf-8")
+                data_source_name = "basetransp.csv (padrão)"
+            except Exception as e:
+                st.error(f"Erro ao carregar basetransp.csv: {e}")
+                df_transp = None
+    else:
+        df_transp = st.session_state.data
+        data_source_name = st.session_state.data_source
+    
+    if df_transp is None:
+        st.warning("⚠️ Nenhum dado disponível. Configure o conjunto de questões para '8 questões' ou faça upload de um arquivo.")
+    else:
+        st.info(f"📊 **Analisando dados de:** {data_source_name}")
+        
+        # Processar dados: remover linhas em branco e agrupar
+        df_transp = df_transp.dropna(how='all')  # Remove linhas completamente vazias
+        df_transp = df_transp.reset_index(drop=True)  # Reindexar após remoção
+        
+        # Definir as 8 questões específicas do Portal Transparência
+        # Usar os textos reais das colunas do CSV
+        questoes_portal = {
+            "O Portal é fácil de usar.": "O Portal é fácil de usar",
+            "É fácil localizar os dados e as informações no Portal.": "É fácil localizar os dados e as informações no Portal", 
+            "A navegação pelo Portal é intuitiva.": "A navegação pelo Portal é intuitiva",
+            "O Portal funciona sem falhas.": "O Portal funciona sem falhas",
+            "As informações são fáceis de entender.": "As informações são fáceis de entender",
+            "As informações são precisas.": "As informações são precisas",
+            "As informações disponibilizadas estão atualizadas.": "As informações disponibilizadas estão atualizadas",
+            "Consigo obter o que preciso no menor tempo possível.": "Consigo obter o que preciso no menor tempo possível",
+            "Qual o seu nível de satisfação com o Portal da Transparência do RS?": "Nível de satisfação com o Portal da Transparência do RS"
+        }
+        
+        # Mapeamento da escala Likert (1-5)
+        likert_mapping = {
+            "Discordo totalmente": 1,
+            "Discordo": 2, 
+            "Neutro": 3,
+            "Concordo": 4,
+            "Concordo totalmente": 5,
+            # Para satisfação
+            "Muito insatisfeito": 1,
+            "Insatisfeito": 2,
+            "Neutro": 3,
+            "Satisfeito": 4,
+            "Muito satisfeito": 5
+        }
+        
+        # Aplicar mapeamento numérico
+        for col in df_transp.columns:
+            if col in questoes_portal.keys():
+                df_transp[col] = df_transp[col].map(likert_mapping).fillna(df_transp[col])
+        
+        # Aplicar filtros
+        df_filtered = filters_ui(df_transp)
+        
+        # Calcular médias para cada questão
+        medias_questoes = {}
+        for questao_col, questao_desc in questoes_portal.items():
+            if questao_col in df_filtered.columns:
+                media = df_filtered[questao_col].mean()
+                medias_questoes[questao_desc] = media if not pd.isna(media) else 0
+        
+        # Header com métricas principais
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("📊 Total de Respostas", len(df_filtered))
+        with col2:
+            st.metric("🎯 Meta Estabelecida", f"{goal:.1f}")
+        with col3:
+            if "Nível de satisfação com o Portal da Transparência do RS" in medias_questoes:
+                satisfacao_media = medias_questoes["Nível de satisfação com o Portal da Transparência do RS"]
+                st.metric("😊 Satisfação Média", f"{satisfacao_media:.2f}")
+            else:
+                st.metric("📋 Questões Analisadas", "8")
+        with col4:
+            abaixo_meta = sum(1 for media in medias_questoes.values() if media < goal)
+            st.metric("⚠️ Abaixo da Meta", f"{abaixo_meta}/{len(medias_questoes)}")
+        
+        st.markdown("---")
+        
+        # Dashboard principal com duas colunas
+        col_left, col_right = st.columns([2, 1])
+        
+        with col_left:
+            st.subheader("📈 Visão Geral das 8 Questões")
+            
+            # Gráfico de radar
+            if medias_questoes:
+                questoes_sistema = [q for q in medias_questoes.keys() if "satisfação" not in q.lower()]
+                r_vals = [medias_questoes[q] for q in questoes_sistema]
+                
+                if questoes_sistema and r_vals:
+                    fig_radar = go.Figure()
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=r_vals, 
+                        theta=questoes_sistema, 
+                        fill="toself", 
+                        name="Média Atual",
+                        line_color='#1f77b4'
+                    ))
+                    
+                    # Adicionar linha da meta
+                    meta_vals = [goal] * len(questoes_sistema)
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=meta_vals, 
+                        theta=questoes_sistema, 
+                        fill=None, 
+                        name="Meta",
+                        line=dict(color='red', dash='dash', width=2)
+                    ))
+                    
+                    fig_radar.update_layout(
+                        polar=dict(radialaxis=dict(
+                            visible=True, 
+                            range=[1, 5],
+                            tickvals=[1, 2, 3, 4, 5],
+                            ticktext=['1', '2', '3', '4', '5']
+                        )),
+                        showlegend=True,
+                        height=500,
+                        title="Comparação: Desempenho Atual vs Meta"
+                    )
+                    st.plotly_chart(fig_radar, use_container_width=True)
+                else:
+                    st.warning("⚠️ Não há questões válidas para exibir no gráfico de radar.")
+            else:
+                st.warning("⚠️ Não há dados suficientes para exibir o gráfico de radar. Verifique se o arquivo contém as questões esperadas.")
+            
+            # Gráfico de barras horizontal
+            st.subheader("📊 Ranking das Questões")
+            
+            dim_data = []
+            for questao, media in medias_questoes.items():
+                if "satisfação" not in questao.lower():  # Excluir satisfação do ranking
+                    dim_data.append({
+                        'Questão': questao[:30] + "..." if len(questao) > 30 else questao,
+                        'Média': media,
+                        'Status': 'Acima da Meta' if media >= goal else 'Abaixo da Meta'
+                    })
+            
+            if dim_data:  # Verificar se há dados antes de criar o DataFrame
+                try:
+                    df_dim = pd.DataFrame(dim_data)
+                    # Verificar se o DataFrame tem dados e a coluna 'Média' existe
+                    if not df_dim.empty and 'Média' in df_dim.columns:
+                        df_dim = df_dim.sort_values('Média', ascending=True)
+                        
+                        # Criar o gráfico apenas se temos dados válidos
+                        fig_bar = px.bar(
+                            df_dim, 
+                            x='Média', 
+                            y='Questão', 
+                            color='Status',
+                            color_discrete_map={
+                                'Acima da Meta': '#2ecc71',
+                                'Abaixo da Meta': '#e74c3c'
+                            },
+                            orientation='h',
+                            title="Desempenho por Questão"
+                        )
+                        fig_bar.add_vline(x=goal, line_dash="dash", line_color="red", 
+                                         annotation_text=f"Meta: {goal}")
+                        fig_bar.update_layout(height=400)
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                    else:
+                        st.warning("⚠️ DataFrame criado mas sem dados válidos para o gráfico.")
+                except Exception as e:
+                    st.error(f"Erro ao criar DataFrame: {e}")
+            else:
+                st.warning("⚠️ Não há dados suficientes para gerar o gráfico de barras. Verifique se os dados foram carregados corretamente.")
+        
+        with col_right:
+            st.subheader("🎯 Status das Questões")
+            
+            # Cards de status
+            for questao, media in medias_questoes.items():
+                if "satisfação" not in questao.lower():  # Excluir satisfação dos cards
+                    if media >= goal:
+                        status_color = "#d4edda"
+                        status_icon = "✅"
+                        status_text = "Meta Atingida"
+                    else:
+                        status_color = "#f8d7da"
+                        status_icon = "⚠️"
+                        status_text = "Abaixo da Meta"
+                    
+                    questao_short = questao[:25] + "..." if len(questao) > 25 else questao
+                    st.markdown(f"""
+                    <div style="
+                        background-color: {status_color}; 
+                        padding: 10px; 
+                        border-radius: 5px; 
+                        margin-bottom: 10px;
+                        border-left: 4px solid {'#28a745' if media >= goal else '#dc3545'};
+                    ">
+                        <strong>{status_icon} {questao_short}</strong><br>
+                        Média: <strong>{media:.2f}</strong><br>
+                        <small>{status_text}</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        
+        # Seção de Ações Sugeridas
+        st.subheader("💡 Ações Sugeridas para Melhoria")
+        st.write("Com base na análise das médias, aqui estão as ações recomendadas para cada questão:")
+        
+        # Definir ações por questão (baseado no acoesDash.docx.md)
+        acoes_por_questao = {
+            "O Portal é fácil de usar": {
+                "titulo": "🎨 Melhorar Usabilidade",
+                "acoes": [
+                    "Implementar busca inteligente com filtros avançados e sugestões automáticas",
+                    "Realizar testes de usabilidade com usuários reais para identificar pontos de fricção",
+                    "Otimizar interface para dispositivos móveis com design responsivo",
+                    "Adicionar tutoriais interativos e onboarding para novos usuários",
+                    "Criar atalhos de teclado para usuários avançados"
+                ]
+            },
+            "É fácil localizar os dados e as informações no Portal": {
+                "titulo": "🔍 Facilitar Localização de Dados",
+                "acoes": [
+                    "Reorganizar categorização de dados por frequência de uso e relevância",
+                    "Implementar sistema de tags e metadados para melhor organização",
+                    "Criar mapa visual do portal com localização de informações",
+                    "Desenvolver busca semântica que entenda sinônimos e contexto",
+                    "Adicionar filtros inteligentes baseados no perfil do usuário"
+                ]
+            },
+            "A navegação pelo Portal é intuitiva": {
+                "titulo": "🧭 Aprimorar Navegação",
+                "acoes": [
+                    "Implementar breadcrumbs em todas as páginas para orientação",
+                    "Criar menu de navegação contextual baseado na seção atual",
+                    "Desenvolver sistema de navegação por abas para múltiplas consultas",
+                    "Adicionar histórico de navegação e páginas visitadas recentemente",
+                    "Implementar navegação por gestos em dispositivos touch"
+                ]
+            },
+            "O Portal funciona sem falhas": {
+                "titulo": "⚙️ Otimizar Funcionamento",
+                "acoes": [
+                    "Implementar monitoramento de performance em tempo real com alertas",
+                    "Criar dashboard de status do sistema visível aos usuários",
+                    "Estabelecer SLA de 99.9% de disponibilidade com compensações",
+                    "Implementar sistema de cache inteligente para reduzir latência",
+                    "Desenvolver testes automatizados de regressão e performance"
+                ]
+            },
+            "As informações são fáceis de entender": {
+                "titulo": "💡 Aumentar Clareza",
+                "acoes": [
+                    "Desenvolver glossário interativo de termos técnicos e jurídicos",
+                    "Padronizar linguagem simples e acessível em todo o portal",
+                    "Criar guias visuais e infográficos para processos complexos",
+                    "Implementar sistema de ajuda contextual com tooltips explicativos",
+                    "Adicionar exemplos práticos para cada tipo de informação"
+                ]
+            },
+            "As informações são precisas": {
+                "titulo": "🎯 Melhorar Precisão",
+                "acoes": [
+                    "Implementar conciliação automática de dados entre sistemas",
+                    "Criar validações em tempo real com regras de negócio",
+                    "Estabelecer processo de auditoria contínua de qualidade dos dados",
+                    "Desenvolver alertas automáticos para inconsistências detectadas",
+                    "Implementar versionamento e rastreabilidade de alterações"
+                ]
+            },
+            "As informações disponibilizadas estão atualizadas": {
+                "titulo": "🔄 Automatizar Atualização",
+                "acoes": [
+                    "Implementar atualização automática de dados via APIs integradas",
+                    "Criar cronograma transparente de publicação com datas previstas",
+                    "Desenvolver notificações push para usuários sobre novas atualizações",
+                    "Estabelecer versionamento automático com histórico de mudanças",
+                    "Implementar indicadores visuais de última atualização em cada dataset"
+                ]
+            },
+            "Consigo obter o que preciso no menor tempo possível": {
+                "titulo": "⏱️ Reduzir Tempo de Acesso",
+                "acoes": [
+                    "Criar dashboard personalizado de acesso rápido por perfil de usuário",
+                    "Implementar busca por voz para consultas mais naturais",
+                    "Otimizar consultas de banco de dados com indexação inteligente",
+                    "Desenvolver API REST pública para integração com sistemas externos",
+                    "Criar widgets embarcáveis para sites de terceiros"
+                ]
+            }
+        }
+        
+        # Mostrar ações organizadas por prioridade
+        questoes_abaixo_meta = [(q, m) for q, m in medias_questoes.items() if "satisfação" not in q.lower() and m < goal]
+        questoes_acima_meta = [(q, m) for q, m in medias_questoes.items() if "satisfação" not in q.lower() and m >= goal]
+        
+        if questoes_abaixo_meta:
+            st.markdown("### 🚨 Prioridade Alta - Questões Abaixo da Meta")
+            questoes_abaixo_meta.sort(key=lambda x: x[1])  # Ordenar por média (pior primeiro)
+            
+            for questao, media_atual in questoes_abaixo_meta:
+                if questao in acoes_por_questao:
+                    acao_info = acoes_por_questao[questao]
+                    gap = goal - media_atual
+                    
+                    with st.expander(f"{acao_info['titulo']} - Média: {media_atual:.2f} (Gap: -{gap:.2f})"):
+                        st.write("**Ações Recomendadas:**")
+                        for i, acao in enumerate(acao_info["acoes"], 1):
+                            st.write(f"{i}. {acao}")
+                        
+                        # Barra de progresso
+                        progresso = (media_atual / goal) * 100
+                        st.progress(min(progresso / 100, 1.0))
+                        st.caption(f"Progresso em relação à meta: {progresso:.1f}%")
+                        
+                        # Indicador de prioridade
+                        if media_atual < 2.5:
+                            st.error("🔴 **Prioridade Crítica** - Requer ação imediata")
+                        elif media_atual < 3.5:
+                            st.warning("🟡 **Prioridade Alta** - Ação necessária em breve")
+                        else:
+                            st.info("🔵 **Prioridade Média** - Melhorias incrementais")
+        
+        if questoes_acima_meta:
+            st.markdown("### ✅ Manutenção - Questões Acima da Meta")
+            questoes_acima_meta.sort(key=lambda x: x[1], reverse=True)  # Ordenar por média (melhor primeiro)
+            
+            for questao, media_atual in questoes_acima_meta:
+                if questao in acoes_por_questao:
+                    acao_info = acoes_por_questao[questao]
+                    
+                    with st.expander(f"{acao_info['titulo']} - Média: {media_atual:.2f} ✅"):
+                        st.success("Esta questão está atingindo a meta! Ações para manter e aprimorar:")
+                        for i, acao in enumerate(acao_info["acoes"], 1):
+                            st.write(f"{i}. {acao}")
+                        
+                        # Indicador de excelência
+                        if media_atual >= 4.5:
+                            st.success("🌟 **Excelência** - Referência para outras questões")
+                        else:
+                            st.info("📈 **Bom desempenho** - Oportunidade de otimização")
+        
+        # Resumo executivo
+        st.markdown("---")
+        st.subheader("📋 Resumo Executivo")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**🎯 Metas Atingidas:**")
+            if questoes_acima_meta:
+                for questao, media in questoes_acima_meta:
+                    questao_short = questao[:40] + "..." if len(questao) > 40 else questao
+                    st.write(f"✅ {questao_short}: {media:.2f}")
+            else:
+                st.write("Nenhuma questão atingiu a meta ainda.")
+        
+        with col2:
+            st.markdown("**⚠️ Necessitam Atenção:**")
+            if questoes_abaixo_meta:
+                for questao, media in questoes_abaixo_meta:
+                    questao_short = questao[:40] + "..." if len(questao) > 40 else questao
+                    gap = goal - media
+                    st.write(f"🔴 {questao_short}: {media:.2f} (Gap: -{gap:.2f})")
+            else:
+                st.write("Todas as questões estão atingindo a meta! 🎉")
+        
+        # Análise de satisfação geral
+        if "Nível de satisfação com o Portal da Transparência do RS" in medias_questoes:
+            satisfacao_geral = medias_questoes["Nível de satisfação com o Portal da Transparência do RS"]
+            st.markdown("---")
+            st.subheader("😊 Análise de Satisfação Geral")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Satisfação Atual", f"{satisfacao_geral:.2f}")
+            with col2:
+                if satisfacao_geral >= goal:
+                    st.success("Meta de Satisfação Atingida! ✅")
+                else:
+                    gap_sat = goal - satisfacao_geral
+                    st.error(f"Gap de Satisfação: -{gap_sat:.2f}")
+            with col3:
+                # Correlação com questões técnicas
+                media_tecnica = np.mean([m for q, m in medias_questoes.items() if "satisfação" not in q.lower()])
+                correlacao = abs(satisfacao_geral - media_tecnica)
+                if correlacao < 0.5:
+                    st.info("Alta correlação com questões técnicas")
+                else:
+                    st.warning("Baixa correlação - investigar fatores externos")
+        
+        # Indicadores de tendência e recomendações finais
+        st.markdown("---")
+        st.info("💡 **Dica:** Use os filtros na barra lateral para analisar segmentos específicos da população e identificar oportunidades de melhoria direcionadas.")
+        
+        # Exportar dados para análise
+        if st.button("📊 Exportar Relatório de Análise"):
+            if not medias_questoes:
+                st.warning("⚠️ Não há dados suficientes para gerar o relatório. Verifique os filtros aplicados.")
+            else:
+                relatorio_data = {
+                    'Questão': [],
+                    'Média': [],
+                    'Status': [],
+                    'Gap': [],
+                    'Prioridade': []
+                }
+                
+                for questao, media in medias_questoes.items():
+                    if "satisfação" not in questao.lower():
+                        relatorio_data['Questão'].append(questao)
+                        relatorio_data['Média'].append(media)
+                        relatorio_data['Status'].append('Acima da Meta' if media >= goal else 'Abaixo da Meta')
+                        relatorio_data['Gap'].append(goal - media if media < goal else 0)
+                        
+                        if media < 2.5:
+                            prioridade = "Crítica"
+                        elif media < 3.5:
+                            prioridade = "Alta"
+                        elif media < goal:
+                            prioridade = "Média"
+                        else:
+                            prioridade = "Manutenção"
+                        relatorio_data['Prioridade'].append(prioridade)
+                
+                df_relatorio = pd.DataFrame(relatorio_data)
+                csv = df_relatorio.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 Download CSV",
+                    data=csv,
+                    file_name=f"relatorio_portal_transparencia_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+
 
 # -----------------------------
 # Page: Configurações

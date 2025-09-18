@@ -1,0 +1,300 @@
+{
+  "tech_stack": ["Python", "Streamlit", "Pandas", "Plotly", "Scikit-learn", "Supabase", "Local Storage"],
+  "features": [
+    {
+      "name": "User Authentication",
+      "description": "Sistema de autenticação híbrido com suporte local e Supabase, incluindo registro, login e logout de usuários",
+      "files": ["app.py", "core/data_manager.py", "core/local_storage.py", "core/models.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "User Authentication API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/login": {
+            "post": {
+              "summary": "User login",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "email": {"type": "string"},
+                        "password": {"type": "string"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "File Upload",
+      "description": "Upload e processamento de arquivos CSV com validação automática e armazenamento de metadados",
+      "files": ["app.py", "core/data_manager.py", "core/local_storage.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "File Upload API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/upload": {
+            "post": {
+              "summary": "Upload CSV file",
+              "requestBody": {
+                "content": {
+                  "multipart/form-data": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string",
+                          "format": "binary"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Dashboard Analytics",
+      "description": "Dashboard principal com métricas, gráficos radar, análise de satisfação e insights automáticos sobre itens críticos",
+      "files": ["app.py", "config/items_mapping.json"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Dashboard Analytics API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/dashboard": {
+            "get": {
+              "summary": "Get dashboard metrics",
+              "responses": {
+                "200": {
+                  "description": "Dashboard data",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "metrics": {"type": "object"},
+                          "satisfaction": {"type": "number"},
+                          "dimensions": {"type": "object"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Question Set Filter",
+      "description": "Sistema de filtros por conjunto de questões (Completo, 20 questões, 8 questões) com mapeamento automático",
+      "files": ["app.py", "config/items_mapping.json"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Question Set Filter API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/filter": {
+            "post": {
+              "summary": "Filter data by question set",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "question_set": {
+                          "type": "string",
+                          "enum": ["Completo", "20 questões", "8 questões"]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Detailed Analysis",
+      "description": "Análise detalhada com correlações, regressões, análise multivariada e filtros demográficos",
+      "files": ["app.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Detailed Analysis API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/analysis": {
+            "get": {
+              "summary": "Get detailed analysis",
+              "responses": {
+                "200": {
+                  "description": "Analysis results",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "correlations": {"type": "object"},
+                          "regression": {"type": "object"},
+                          "multivariate": {"type": "object"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "User Profile",
+      "description": "Perfil do usuário com gráfico radar de 10 pontos, histórico de uploads e análise personalizada",
+      "files": ["app.py", "core/data_manager.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "User Profile API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/profile": {
+            "get": {
+              "summary": "Get user profile",
+              "responses": {
+                "200": {
+                  "description": "User profile data",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "user_info": {"type": "object"},
+                          "uploads": {"type": "array"},
+                          "radar_chart": {"type": "object"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Critical Items Classification",
+      "description": "Sistema de classificação automática de itens críticos baseado em média < 3.0, substituindo o termo 'prioritário' por 'crítico'",
+      "files": ["app.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "Critical Items API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/critical-items": {
+            "get": {
+              "summary": "Get critical items classification",
+              "responses": {
+                "200": {
+                  "description": "Critical items data",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "critical_items": {"type": "array"},
+                          "action_items": {"type": "array"},
+                          "good_items": {"type": "array"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "User Preferences",
+      "description": "Gerenciamento de preferências do usuário incluindo metas personalizadas e configurações persistentes",
+      "files": ["app.py", "core/data_manager.py", "core/models.py"],
+      "api_doc": {
+        "openapi": "3.0.0",
+        "info": {
+          "title": "User Preferences API",
+          "version": "1.0.0"
+        },
+        "paths": {
+          "/preferences": {
+            "get": {
+              "summary": "Get user preferences",
+              "responses": {
+                "200": {
+                  "description": "User preferences",
+                  "content": {
+                    "application/json": {
+                      "schema": {
+                        "type": "object",
+                        "properties": {
+                          "goal": {"type": "number"},
+                          "custom_settings": {"type": "object"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "put": {
+              "summary": "Update user preferences",
+              "requestBody": {
+                "content": {
+                  "application/json": {
+                    "schema": {
+                      "type": "object",
+                      "properties": {
+                        "goal": {"type": "number"},
+                        "custom_settings": {"type": "object"}
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
